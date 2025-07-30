@@ -7,7 +7,7 @@ use eframe::{egui, NativeOptions};
 use egui::ViewportBuilder;
 use lazy_static::lazy_static;
 use regex::Regex;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fs;
 use std::io::{self, Seek, SeekFrom};
@@ -30,6 +30,13 @@ fn format_duration(seconds: u64) -> String {
 
 // --- Data Structures to hold parsed information ---
 
+#[derive(Clone, Copy, PartialEq)]
+enum ViewMode {
+    CurrentFight,
+    OverallStats,
+    MultipleSelected,
+}
+
 /// Holds the aggregated statistics for a single combatant.
 #[derive(Debug, Default, Clone)]
 struct CombatantStats {
@@ -37,6 +44,7 @@ struct CombatantStats {
     hits: u32,
     misses: u32,
     critical_hits: u32,
+    concealment_dodges: u32,
     weapon_buffs: u32,
     total_damage_dealt: u32,
     hit_damage: u32,
@@ -48,6 +56,12 @@ struct CombatantStats {
     weapon_buff_damage_by_type: HashMap<String, u32>,
     damage_by_source_dealt: HashMap<String, u32>, // "Attack", "Spell: Fireball", etc.
     damage_by_source_and_type_dealt: HashMap<String, HashMap<String, u32>>, // Source -> Type -> Amount
+    damage_by_target_dealt: HashMap<String, u32>, // Target -> Total damage to that target
+    damage_by_target_and_source_dealt: HashMap<String, HashMap<String, u32>>, // Target -> Source -> Amount
+    damage_by_target_source_and_type_dealt: HashMap<String, HashMap<String, HashMap<String, u32>>>, // Target -> Source -> Type -> Amount
+    hit_damage_by_target_type: HashMap<String, HashMap<String, u32>>, // Target -> Type -> Amount (for hit damage only)
+    crit_damage_by_target_type: HashMap<String, HashMap<String, u32>>, // Target -> Type -> Amount (for crit damage only)
+    weapon_buff_damage_by_target_type: HashMap<String, HashMap<String, u32>>, // Target -> Type -> Amount (for weapon buff damage only)
 
     // --- Stats for actions received by the combatant ---
     times_attacked: u32,
@@ -55,6 +69,8 @@ struct CombatantStats {
     damage_by_type_received: HashMap<String, u32>,
     damage_by_source_received: HashMap<String, u32>, // Track who/what damaged this combatant
     damage_by_source_and_type_received: HashMap<String, HashMap<String, u32>>, // Source -> Type -> Amount
+    damage_by_attacker_received: HashMap<String, u32>, // Attacker -> Total damage from that attacker
+    damage_by_attacker_and_source_received: HashMap<String, HashMap<String, u32>>, // Attacker -> Source -> Amount
 
     // --- Special stats like absorption ---
     total_damage_absorbed: u32,
@@ -178,8 +194,10 @@ struct NwnLogApp {
     encounters: Arc<Mutex<HashMap<u64, Encounter>>>,
     /// The current encounter being tracked
     current_encounter_id: Arc<Mutex<Option<u64>>>,
-    /// Selected encounter for display
-    selected_encounter_id: Option<u64>,
+    /// Selected encounters for display (supports multiple selection)
+    selected_encounter_ids: std::collections::HashSet<u64>,
+    /// Current view mode: individual encounters or combined view
+    view_mode: ViewMode,
     /// Track if we're in resize mode
     is_resizing: bool,
     /// Minimum window size
@@ -199,7 +217,8 @@ impl NwnLogApp {
         Self {
             encounters: Arc::new(Mutex::new(HashMap::new())),
             current_encounter_id: Arc::new(Mutex::new(None)),
-            selected_encounter_id: None,
+            selected_encounter_ids: HashSet::new(),
+            view_mode: ViewMode::CurrentFight,
             is_resizing: false,
             min_size: egui::Vec2::new(300.0, 250.0),
             text_scale: 1.0,
@@ -256,34 +275,218 @@ impl NwnLogApp {
     }
 
     fn get_current_stats(&self) -> HashMap<String, CombatantStats> {
-        let encounters = self.encounters.lock().unwrap();
+        // If encounters are selected, always show combined encounter stats
+        if !self.selected_encounter_ids.is_empty() {
+            return self.get_combined_selected_stats_safe();
+        }
         
-        if let Some(selected_id) = self.selected_encounter_id {
-            // Show specific selected encounter
-            if let Some(encounter) = encounters.get(&selected_id) {
-                return encounter.stats.clone();
+        match self.view_mode {
+            ViewMode::CurrentFight => {
+                // Check if there's an active fight
+                if let Ok(current_id) = self.current_encounter_id.try_lock() {
+                    if let Some(current_id) = *current_id {
+                        if let Ok(encounters) = self.encounters.try_lock() {
+                            if let Some(encounter) = encounters.get(&current_id) {
+                                // Check if the fight is still active (within 5 seconds)
+                                let current_time = get_current_timestamp();
+                                if current_time >= encounter.end_time && current_time - encounter.end_time <= 5 {
+                                    return encounter.stats.clone();
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // No active fight, return empty stats
+                HashMap::new()
+            },
+            ViewMode::OverallStats => {
+                self.get_overall_stats_safe()
+            },
+            ViewMode::MultipleSelected => {
+                self.get_combined_selected_stats_safe()
             }
         }
+    }
 
-        // If "Current Fight" is selected (None), check if there's an active fight
-        let current_id = *self.current_encounter_id.lock().unwrap();
+    fn get_combined_selected_stats_safe(&self) -> HashMap<String, CombatantStats> {
+        if let Ok(encounters) = self.encounters.try_lock() {
+            self.combine_selected_encounters_stats(&encounters)
+        } else {
+            HashMap::new()
+        }
+    }
+
+    fn get_combined_selected_stats(&self) -> HashMap<String, CombatantStats> {
+        let encounters = self.encounters.lock().unwrap();
+        self.combine_selected_encounters_stats(&encounters)
+    }
+
+    fn combine_selected_encounters_stats(&self, encounters: &HashMap<u64, Encounter>) -> HashMap<String, CombatantStats> {
+        let mut combined_stats = HashMap::new();
         
-        if let Some(current_id) = current_id {
-            if let Some(encounter) = encounters.get(&current_id) {
-                // Check if the fight is still active (within 5 seconds)
-                let current_time = get_current_timestamp();
-                if current_time >= encounter.end_time && current_time - encounter.end_time <= 5 {
-                    return encounter.stats.clone();
+        // Combine stats from all selected encounters
+        for encounter_id in &self.selected_encounter_ids {
+            if let Some(encounter) = encounters.get(encounter_id) {
+                for (name, stats) in &encounter.stats {
+                    let combined = combined_stats.entry(name.clone()).or_insert_with(CombatantStats::default);
+                    
+                    // Aggregate all stats (same logic as get_overall_stats)
+                    combined.hits += stats.hits;
+                    combined.misses += stats.misses;
+                    combined.critical_hits += stats.critical_hits;
+                    combined.times_attacked += stats.times_attacked;
+                    combined.total_damage_dealt += stats.total_damage_dealt;
+                    combined.hit_damage += stats.hit_damage;
+                    combined.crit_damage += stats.crit_damage;
+                    combined.weapon_buff_damage += stats.weapon_buff_damage;
+                    combined.total_damage_received += stats.total_damage_received;
+                    combined.total_damage_absorbed += stats.total_damage_absorbed;
+                    
+                    // Aggregate damage by type dealt
+                    for (dtype, amount) in &stats.damage_by_type_dealt {
+                        *combined.damage_by_type_dealt.entry(dtype.clone()).or_default() += *amount;
+                    }
+                    
+                    // Aggregate hit damage by type
+                    for (dtype, amount) in &stats.hit_damage_by_type {
+                        *combined.hit_damage_by_type.entry(dtype.clone()).or_default() += *amount;
+                    }
+                    
+                    // Aggregate crit damage by type
+                    for (dtype, amount) in &stats.crit_damage_by_type {
+                        *combined.crit_damage_by_type.entry(dtype.clone()).or_default() += *amount;
+                    }
+                    
+                    // Aggregate weapon buff damage by type
+                    for (dtype, amount) in &stats.weapon_buff_damage_by_type {
+                        *combined.weapon_buff_damage_by_type.entry(dtype.clone()).or_default() += *amount;
+                    }
+                    
+                    // Aggregate damage sources
+                    for (source, amount) in &stats.damage_by_source_dealt {
+                        *combined.damage_by_source_dealt.entry(source.clone()).or_default() += *amount;
+                    }
+                    
+                    // Aggregate damage by source and type dealt
+                    for (source, type_map) in &stats.damage_by_source_and_type_dealt {
+                        let combined_type_map = combined.damage_by_source_and_type_dealt.entry(source.clone()).or_default();
+                        for (dtype, amount) in type_map {
+                            *combined_type_map.entry(dtype.clone()).or_default() += *amount;
+                        }
+                    }
+                    
+                    // Aggregate damage by target
+                    for (target, amount) in &stats.damage_by_target_dealt {
+                        *combined.damage_by_target_dealt.entry(target.clone()).or_default() += *amount;
+                    }
+                    
+                    // Aggregate damage by target and source dealt
+                    for (target, source_map) in &stats.damage_by_target_and_source_dealt {
+                        let combined_target_map = combined.damage_by_target_and_source_dealt.entry(target.clone()).or_default();
+                        for (source, amount) in source_map {
+                            *combined_target_map.entry(source.clone()).or_default() += *amount;
+                        }
+                    }
+                    
+                    // Aggregate damage by target, source, and type dealt
+                    for (target, source_map) in &stats.damage_by_target_source_and_type_dealt {
+                        let combined_target_map = combined.damage_by_target_source_and_type_dealt.entry(target.clone()).or_default();
+                        for (source, type_map) in source_map {
+                            let combined_source_map = combined_target_map.entry(source.clone()).or_default();
+                            for (dtype, amount) in type_map {
+                                *combined_source_map.entry(dtype.clone()).or_default() += *amount;
+                            }
+                        }
+                    }
+                    
+                    // Aggregate hit damage by target and type
+                    for (target, type_map) in &stats.hit_damage_by_target_type {
+                        let combined_target_map = combined.hit_damage_by_target_type.entry(target.clone()).or_default();
+                        for (dtype, amount) in type_map {
+                            *combined_target_map.entry(dtype.clone()).or_default() += *amount;
+                        }
+                    }
+                    
+                    // Aggregate crit damage by target and type
+                    for (target, type_map) in &stats.crit_damage_by_target_type {
+                        let combined_target_map = combined.crit_damage_by_target_type.entry(target.clone()).or_default();
+                        for (dtype, amount) in type_map {
+                            *combined_target_map.entry(dtype.clone()).or_default() += *amount;
+                        }
+                    }
+                    
+                    // Aggregate weapon buff damage by target and type
+                    for (target, type_map) in &stats.weapon_buff_damage_by_target_type {
+                        let combined_target_map = combined.weapon_buff_damage_by_target_type.entry(target.clone()).or_default();
+                        for (dtype, amount) in type_map {
+                            *combined_target_map.entry(dtype.clone()).or_default() += *amount;
+                        }
+                    }
+                    
+                    // Aggregate damage sources received
+                    for (source, amount) in &stats.damage_by_source_received {
+                        *combined.damage_by_source_received.entry(source.clone()).or_default() += *amount;
+                    }
+                    
+                    // Aggregate damage by source and type received
+                    for (source, type_map) in &stats.damage_by_source_and_type_received {
+                        let combined_source_map = combined.damage_by_source_and_type_received.entry(source.clone()).or_default();
+                        for (dtype, amount) in type_map {
+                            *combined_source_map.entry(dtype.clone()).or_default() += *amount;
+                        }
+                    }
+                    
+                    // Aggregate damage by attacker received
+                    for (attacker, amount) in &stats.damage_by_attacker_received {
+                        *combined.damage_by_attacker_received.entry(attacker.clone()).or_default() += *amount;
+                    }
+                    
+                    // Aggregate damage by attacker and source received
+                    for (attacker, source_map) in &stats.damage_by_attacker_and_source_received {
+                        let combined_attacker_map = combined.damage_by_attacker_and_source_received.entry(attacker.clone()).or_default();
+                        for (source, amount) in source_map {
+                            *combined_attacker_map.entry(source.clone()).or_default() += *amount;
+                        }
+                    }
+                    
+                    // Aggregate absorbed damage by type
+                    for (dtype, amount) in &stats.absorbed_by_type {
+                        *combined.absorbed_by_type.entry(dtype.clone()).or_default() += *amount;
+                    }
+                    
+                    // Update timing for combined stats
+                    if let Some(first) = stats.first_action_time {
+                        combined.first_action_time = Some(
+                            combined.first_action_time.map_or(first, |existing| existing.min(first))
+                        );
+                    }
+                    if let Some(last) = stats.last_action_time {
+                        combined.last_action_time = Some(
+                            combined.last_action_time.map_or(last, |existing| existing.max(last))
+                        );
+                    }
                 }
             }
         }
         
-        // No active fight, return empty stats for "Current Fight"
-        HashMap::new()
+        combined_stats
+    }
+
+    fn get_overall_stats_safe(&self) -> HashMap<String, CombatantStats> {
+        if let Ok(encounters) = self.encounters.try_lock() {
+            self.combine_all_encounters_stats(&encounters)
+        } else {
+            HashMap::new()
+        }
     }
 
     fn get_overall_stats(&self) -> HashMap<String, CombatantStats> {
         let encounters = self.encounters.lock().unwrap();
+        self.combine_all_encounters_stats(&encounters)
+    }
+
+    fn combine_all_encounters_stats(&self, encounters: &HashMap<u64, Encounter>) -> HashMap<String, CombatantStats> {
         let mut overall_stats = HashMap::new();
         
         for encounter in encounters.values() {
@@ -336,6 +539,54 @@ impl NwnLogApp {
                     }
                 }
                 
+                // Aggregate damage by target dealt
+                for (target, amount) in &stats.damage_by_target_dealt {
+                    *overall.damage_by_target_dealt.entry(target.clone()).or_default() += *amount;
+                }
+                
+                // Aggregate damage by target and source dealt
+                for (target, source_map) in &stats.damage_by_target_and_source_dealt {
+                    let overall_target_map = overall.damage_by_target_and_source_dealt.entry(target.clone()).or_default();
+                    for (source, amount) in source_map {
+                        *overall_target_map.entry(source.clone()).or_default() += *amount;
+                    }
+                }
+                
+                // Aggregate damage by target, source, and type dealt
+                for (target, source_map) in &stats.damage_by_target_source_and_type_dealt {
+                    let overall_target_map = overall.damage_by_target_source_and_type_dealt.entry(target.clone()).or_default();
+                    for (source, type_map) in source_map {
+                        let overall_source_map = overall_target_map.entry(source.clone()).or_default();
+                        for (dtype, amount) in type_map {
+                            *overall_source_map.entry(dtype.clone()).or_default() += *amount;
+                        }
+                    }
+                }
+                
+                // Aggregate hit damage by target and type
+                for (target, type_map) in &stats.hit_damage_by_target_type {
+                    let overall_target_map = overall.hit_damage_by_target_type.entry(target.clone()).or_default();
+                    for (dtype, amount) in type_map {
+                        *overall_target_map.entry(dtype.clone()).or_default() += *amount;
+                    }
+                }
+                
+                // Aggregate crit damage by target and type
+                for (target, type_map) in &stats.crit_damage_by_target_type {
+                    let overall_target_map = overall.crit_damage_by_target_type.entry(target.clone()).or_default();
+                    for (dtype, amount) in type_map {
+                        *overall_target_map.entry(dtype.clone()).or_default() += *amount;
+                    }
+                }
+                
+                // Aggregate weapon buff damage by target and type
+                for (target, type_map) in &stats.weapon_buff_damage_by_target_type {
+                    let overall_target_map = overall.weapon_buff_damage_by_target_type.entry(target.clone()).or_default();
+                    for (dtype, amount) in type_map {
+                        *overall_target_map.entry(dtype.clone()).or_default() += *amount;
+                    }
+                }
+                
                 // Aggregate damage by type received
                 for (dtype, amount) in &stats.damage_by_type_received {
                     *overall.damage_by_type_received.entry(dtype.clone()).or_default() += *amount;
@@ -351,6 +602,19 @@ impl NwnLogApp {
                     let overall_source_map = overall.damage_by_source_and_type_received.entry(source.clone()).or_default();
                     for (dtype, amount) in type_map {
                         *overall_source_map.entry(dtype.clone()).or_default() += *amount;
+                    }
+                }
+                
+                // Aggregate damage by attacker received
+                for (attacker, amount) in &stats.damage_by_attacker_received {
+                    *overall.damage_by_attacker_received.entry(attacker.clone()).or_default() += *amount;
+                }
+                
+                // Aggregate damage by attacker and source received
+                for (attacker, source_map) in &stats.damage_by_attacker_and_source_received {
+                    let overall_attacker_map = overall.damage_by_attacker_and_source_received.entry(attacker.clone()).or_default();
+                    for (source, amount) in source_map {
+                        *overall_attacker_map.entry(source.clone()).or_default() += *amount;
                     }
                 }
                 
@@ -504,14 +768,39 @@ impl NwnLogApp {
                             };
                             
                             self.custom_collapsing_header(ui, egui::Id::new(format!("{}_damage_dealt", name)), &damage_label, |ui| {
-                                    for (source, amount) in &stats.damage_by_source_dealt {
-                                        // Show each source as a collapsible header with damage types underneath
-                                        let source_dps_text = if let Some(dps) = stats.calculate_source_dps(*amount) {
-                                            format!("{}: {} ({:.1} DPS)", source, amount, dps)
+                                    // Sort targets by damage dealt to them (highest to lowest)
+                                    let mut sorted_targets: Vec<_> = stats.damage_by_target_dealt.iter().collect();
+                                    sorted_targets.sort_by(|a, b| b.1.cmp(a.1));
+                                    
+                                    for (target, target_damage) in sorted_targets {
+                                        // Show each target as a collapsible header with total damage to that target
+                                        let target_dps_text = if let Some(dps) = stats.calculate_source_dps(*target_damage) {
+                                            format!("{}: {} ({:.1} DPS)", target, target_damage, dps)
                                         } else {
-                                            format!("{}: {}", source, amount)
+                                            format!("{}: {}", target, target_damage)
                                         };
-                                        self.custom_collapsing_header(ui, egui::Id::new(format!("{}_dealt_source_{}", name, source)), &source_dps_text, |ui| {
+                                        self.custom_collapsing_header(ui, egui::Id::new(format!("{}_target_{}", name, target)), &target_dps_text, |ui| {
+                                            // Show damage sources for this specific target, sorted by amount
+                                            if let Some(source_map) = stats.damage_by_target_and_source_dealt.get(target) {
+                                                let mut sorted_sources: Vec<_> = source_map.iter().collect();
+                                                // Sort with Attack first, then spells alphabetically
+                                                sorted_sources.sort_by(|a, b| {
+                                                    if a.0 == "Attack" && b.0 != "Attack" {
+                                                        std::cmp::Ordering::Less
+                                                    } else if a.0 != "Attack" && b.0 == "Attack" {
+                                                        std::cmp::Ordering::Greater
+                                                    } else {
+                                                        a.0.cmp(b.0)
+                                                    }
+                                                });
+                                                
+                                                for (source, amount) in sorted_sources {
+                                                    let source_dps_text = if let Some(dps) = stats.calculate_source_dps(*amount) {
+                                                        format!("{}: {} ({:.1} DPS)", source, amount, dps)
+                                                    } else {
+                                                        format!("{}: {}", source, amount)
+                                                    };
+                                                    self.custom_collapsing_header(ui, egui::Id::new(format!("{}_target_{}_source_{}", name, target, source)), &source_dps_text, |ui| {
                                                 // Show detailed attack statistics if this is the "Attack" source
                                                 if source == "Attack" {
                                                     // Calculate accurate average damage for hits and crits
@@ -519,21 +808,29 @@ impl NwnLogApp {
                                                     let crit_avg = if stats.critical_hits > 0 { stats.crit_damage / stats.critical_hits } else { 0 };
                                                     
                                                     if stats.misses > 0 {
-                                                        ui.label(format!("{} Misses", stats.misses));
+                                                        if stats.concealment_dodges > 0 {
+                                                            ui.label(format!("Misses {} (concealment {})", stats.misses, stats.concealment_dodges));
+                                                        } else {
+                                                            ui.label(format!("{} Misses", stats.misses));
+                                                        }
                                                     }
                                                     
                                                     if stats.hits > 0 {
                                                         self.custom_collapsing_header(ui, egui::Id::new(format!("{}_hits", name)), &format!("{} Hits (avg {})", stats.hits, hit_avg), |ui| {
-                                                                for (damage_type, type_amount) in &stats.hit_damage_by_type {
-                                                                    ui.label(format!("{}: {}", damage_type, type_amount));
+                                                                if let Some(type_map) = stats.hit_damage_by_target_type.get(target) {
+                                                                    for (damage_type, type_amount) in type_map {
+                                                                        ui.label(format!("{}: {}", damage_type, type_amount));
+                                                                    }
                                                                 }
                                                             });
                                                     }
                                                     
                                                     if stats.critical_hits > 0 {
                                                         self.custom_collapsing_header(ui, egui::Id::new(format!("{}_crits", name)), &format!("{} Crits (avg {})", stats.critical_hits, crit_avg), |ui| {
-                                                                for (damage_type, type_amount) in &stats.crit_damage_by_type {
-                                                                    ui.label(format!("{}: {}", damage_type, type_amount));
+                                                                if let Some(type_map) = stats.crit_damage_by_target_type.get(target) {
+                                                                    for (damage_type, type_amount) in type_map {
+                                                                        ui.label(format!("{}: {}", damage_type, type_amount));
+                                                                    }
                                                                 }
                                                             });
                                                     }
@@ -541,47 +838,70 @@ impl NwnLogApp {
                                                     if stats.weapon_buffs > 0 {
                                                         let buff_avg = if stats.weapon_buffs > 0 { stats.weapon_buff_damage / stats.weapon_buffs } else { 0 };
                                                         self.custom_collapsing_header(ui, egui::Id::new(format!("{}_weapon_buffs", name)), &format!("{} Weapon Buff (avg {})", stats.weapon_buffs, buff_avg), |ui| {
-                                                                for (damage_type, type_amount) in &stats.weapon_buff_damage_by_type {
-                                                                    ui.label(format!("{}: {}", damage_type, type_amount));
+                                                                if let Some(type_map) = stats.weapon_buff_damage_by_target_type.get(target) {
+                                                                    for (damage_type, type_amount) in type_map {
+                                                                        ui.label(format!("{}: {}", damage_type, type_amount));
+                                                                    }
                                                                 }
                                                             });
                                                     }
                                                 } else {
-                                                    // For non-Attack sources, show damage types normally
-                                                    if let Some(type_map) = stats.damage_by_source_and_type_dealt.get(source) {
-                                                        for (damage_type, type_amount) in type_map {
-                                                            ui.label(format!("{}: {}", damage_type, type_amount));
+                                                    // For non-Attack sources, show damage types for this specific target
+                                                    if let Some(target_map) = stats.damage_by_target_source_and_type_dealt.get(target) {
+                                                        if let Some(type_map) = target_map.get(source) {
+                                                            for (damage_type, type_amount) in type_map {
+                                                                ui.label(format!("{}: {}", damage_type, type_amount));
+                                                            }
                                                         }
                                                     }
+                                                    }
+                                                });
                                                 }
-                                            });
+                                            }
+                                        });
                                     }
                                 });
                         }
                         if stats.total_damage_received > 0 || stats.total_damage_absorbed > 0 {
                             self.custom_collapsing_header(ui, egui::Id::new(format!("{}_damage_received", name)), &format!("Total Damage Received: {}", stats.total_damage_received), |ui| {
-                                    for (source, amount) in &stats.damage_by_source_received {
-                                        // Show each source as a collapsible header with damage types underneath
-                                        self.custom_collapsing_header(ui, egui::Id::new(format!("{}_received_source_{}", name, source)), &format!("{}: {}", source, amount), |ui| {
-                                                if let Some(type_map) = stats.damage_by_source_and_type_received.get(source) {
-                                                    for (damage_type, type_amount) in type_map {
-                                                        let absorbed_amount = stats.absorbed_by_type.get(damage_type).unwrap_or(&0);
-                                                        let total_attempted_type = type_amount + absorbed_amount;
-                                                        
-                                                        if *absorbed_amount > 0 {
-                                                            let immunity_percent = if total_attempted_type > 0 {
-                                                                (*absorbed_amount as f32 / total_attempted_type as f32 * 100.0) as u32
-                                                            } else {
-                                                                0
-                                                            };
-                                                            ui.label(format!("{}: {} ({} absorbed, {}% immunity)", 
-                                                                damage_type, type_amount, absorbed_amount, immunity_percent));
-                                                        } else {
-                                                            ui.label(format!("{}: {}", damage_type, type_amount));
+                                    // Sort attackers by damage received from them (highest to lowest)
+                                    let mut sorted_attackers: Vec<_> = stats.damage_by_attacker_received.iter().collect();
+                                    sorted_attackers.sort_by(|a, b| b.1.cmp(a.1));
+                                    
+                                    for (attacker, attacker_damage) in sorted_attackers {
+                                        // Show each attacker as a collapsible header with total damage from that attacker
+                                        self.custom_collapsing_header(ui, egui::Id::new(format!("{}_attacker_{}", name, attacker)), &format!("{}: {}", attacker, attacker_damage), |ui| {
+                                            // Show damage sources from this specific attacker, sorted by amount
+                                            if let Some(source_map) = stats.damage_by_attacker_and_source_received.get(attacker) {
+                                                let mut sorted_sources: Vec<_> = source_map.iter().collect();
+                                                sorted_sources.sort_by(|a, b| b.1.cmp(a.1));
+                                                
+                                                for (source, amount) in sorted_sources {
+                                                    self.custom_collapsing_header(ui, egui::Id::new(format!("{}_attacker_{}_source_{}", name, attacker, source)), &format!("{}: {}", source, amount), |ui| {
+                                                        // Show damage types for this attacker's source
+                                                        let combined_source = format!("{} ({})", attacker, source);
+                                                        if let Some(type_map) = stats.damage_by_source_and_type_received.get(&combined_source) {
+                                                            for (damage_type, type_amount) in type_map {
+                                                                let absorbed_amount = stats.absorbed_by_type.get(damage_type).unwrap_or(&0);
+                                                                let total_attempted_type = type_amount + absorbed_amount;
+                                                                
+                                                                if *absorbed_amount > 0 {
+                                                                    let immunity_percent = if total_attempted_type > 0 {
+                                                                        (*absorbed_amount as f32 / total_attempted_type as f32 * 100.0) as u32
+                                                                    } else {
+                                                                        0
+                                                                    };
+                                                                    ui.label(format!("{}: {} ({} absorbed, {}% immunity)", 
+                                                                        damage_type, type_amount, absorbed_amount, immunity_percent));
+                                                                } else {
+                                                                    ui.label(format!("{}: {}", damage_type, type_amount));
+                                                                }
+                                                            }
                                                         }
-                                                    }
+                                                    });
                                                 }
-                                            });
+                                            }
+                                        });
                                     }
                                     
                                     // Show absorbed damage types that had no received damage (100% immunity)
@@ -612,6 +932,8 @@ impl NwnLogApp {
 impl eframe::App for NwnLogApp {
     /// This function is called on every frame to update the GUI.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Request continuous repaints to keep the app updating even when not focused
+        ctx.request_repaint();
         egui::CentralPanel::default().show(ctx, |ui| {
             // Prevent the UI from auto-sizing by setting a minimum size
             ui.set_min_size(egui::Vec2::new(300.0, 200.0));
@@ -673,172 +995,102 @@ impl eframe::App for NwnLogApp {
             
             ui.separator();
             
-            // Fight selector with dropdown for individual fights
+            // View mode selector
             ui.horizontal(|ui| {
-                // Fixed width buttons
-                if ui.add_sized([100.0, 20.0], egui::Button::new("Current Fight").selected(self.selected_encounter_id.is_none())).clicked() {
-                    self.selected_encounter_id = None;
-                }
-                if ui.add_sized([100.0, 20.0], egui::Button::new("Overall Stats").selected(self.selected_encounter_id == Some(u64::MAX))).clicked() {
-                    self.selected_encounter_id = Some(u64::MAX);
-                }
+                // Fixed width buttons for view modes
+                // Determine what data is currently being shown to highlight the correct button
+                let showing_encounters = !self.selected_encounter_ids.is_empty();
+                let showing_current_fight = self.selected_encounter_ids.is_empty() && self.view_mode == ViewMode::CurrentFight;
+                let showing_overall_stats = self.selected_encounter_ids.is_empty() && self.view_mode == ViewMode::OverallStats;
                 
-                // Individual fight selector with truncated text
-                let fight_button_text = if let Some(selected) = self.selected_encounter_id {
-                    if selected != u64::MAX {
-                        if let Ok(encounters) = self.encounters.try_lock() {
-                            if let Some(encounter) = encounters.get(&selected) {
-                                let display_name = encounter.get_display_name();
-                                // Truncate long names to prevent overflow
-                                if display_name.len() > 20 {
-                                    format!("{}...", &display_name[..17])
-                                } else {
-                                    display_name
-                                }
-                            } else {
-                                "Select Fight".to_string()
-                            }
-                        } else {
-                            "Select Fight".to_string()
-                        }
-                    } else {
-                        "Select Fight".to_string()
-                    }
+                if ui.add_sized([100.0, 20.0], egui::Button::new("Current Fight").selected(showing_current_fight)).clicked() {
+                    self.view_mode = ViewMode::CurrentFight;
+                    self.selected_encounter_ids.clear(); // Clear encounter selections when switching to Current Fight
+                }
+                if ui.add_sized([100.0, 20.0], egui::Button::new("Overall Stats").selected(showing_overall_stats)).clicked() {
+                    self.view_mode = ViewMode::OverallStats;
+                    self.selected_encounter_ids.clear(); // Clear encounter selections when switching to Overall Stats
+                }
+                let encounters_button_text = if !self.selected_encounter_ids.is_empty() {
+                    format!("Encounters ({})", self.selected_encounter_ids.len())
                 } else {
-                    "Select Fight".to_string()
+                    "Encounters".to_string()
                 };
+                if ui.add_sized([120.0, 20.0], egui::Button::new(encounters_button_text).selected(showing_encounters || self.view_mode == ViewMode::MultipleSelected)).clicked() {
+                    if self.view_mode == ViewMode::MultipleSelected {
+                        // If already in multi-select mode, close the selection UI but keep showing the data
+                        self.view_mode = ViewMode::CurrentFight; // This will be overridden by get_current_stats if encounters are selected
+                    } else {
+                        // Switch to multi-select mode to show the selection UI
+                        self.view_mode = ViewMode::MultipleSelected;
+                    }
+                }
+            });
+            
+            // Show encounter selection UI if in multi-select mode
+            if self.view_mode == ViewMode::MultipleSelected {
+                ui.separator();
+                ui.label("Select encounters to combine:");
                 
-                // Use remaining width but cap it to prevent overflow
-                let remaining_width = ui.available_width().min(200.0);
-                egui::ComboBox::from_id_salt("fight_selector")
-                    .selected_text(fight_button_text)
-                    .width(remaining_width)
-                    .height(200.0)
-                    .show_ui(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .id_salt("encounter_selection_scroll")
+                    .max_height(150.0)
+                    .show(ui, |ui| {
                         if let Ok(encounters) = self.encounters.try_lock() {
                             let mut sorted_encounters: Vec<_> = encounters.values().collect();
                             sorted_encounters.sort_by(|a, b| b.end_time.cmp(&a.end_time));
                             
-                            egui::ScrollArea::vertical()
-                                .max_height(180.0)
-                                .auto_shrink([false; 2])
-                                .show(ui, |ui| {
-                                    for encounter in sorted_encounters {
-                                        let display_name = encounter.get_display_name();
-                                        ui.selectable_value(&mut self.selected_encounter_id, Some(encounter.id), display_name);
+                            for encounter in sorted_encounters {
+                                let mut is_selected = self.selected_encounter_ids.contains(&encounter.id);
+                                let display_name = encounter.get_display_name();
+                                
+                                // Make the entire row clickable by using a horizontal layout
+                                ui.horizontal(|ui| {
+                                    if ui.checkbox(&mut is_selected, "").changed() {
+                                        if is_selected {
+                                            self.selected_encounter_ids.insert(encounter.id);
+                                        } else {
+                                            self.selected_encounter_ids.remove(&encounter.id);
+                                        }
+                                    }
+                                    
+                                    // Make the text also clickable
+                                    let text_response = ui.selectable_label(is_selected, display_name);
+                                    if text_response.clicked() {
+                                        if is_selected {
+                                            self.selected_encounter_ids.remove(&encounter.id);
+                                        } else {
+                                            self.selected_encounter_ids.insert(encounter.id);
+                                        }
                                     }
                                 });
+                            }
                         }
                     });
-            });
+                
+                // Show selection summary
+                if !self.selected_encounter_ids.is_empty() {
+                    ui.horizontal(|ui| {
+                        ui.label(format!("Selected {} encounter(s)", self.selected_encounter_ids.len()));
+                        
+                        if ui.button("Clear All").clicked() {
+                            self.selected_encounter_ids.clear();
+                        }
+                        if ui.button("Select All").clicked() {
+                            if let Ok(encounters) = self.encounters.try_lock() {
+                                for encounter_id in encounters.keys() {
+                                    self.selected_encounter_ids.insert(*encounter_id);
+                                }
+                            }
+                        }
+                    });
+                }
+            }
             
             ui.separator();
             
-            // Get the stats data first, then release the lock
-            let stats_to_display = match self.encounters.try_lock() {
-                Ok(encounters) => {
-                    // Determine what stats to show based on selection
-                    if let Some(selected_id) = self.selected_encounter_id {
-                        if selected_id == u64::MAX {
-                            // Overall stats - combine all encounters
-                            let mut combined_stats: HashMap<String, CombatantStats> = HashMap::new();
-                            
-                            for encounter in encounters.values() {
-                                for (name, stats) in &encounter.stats {
-                                    let combined = combined_stats.entry(name.clone()).or_default();
-                                    combined.hits += stats.hits;
-                                    combined.misses += stats.misses;
-                                    combined.critical_hits += stats.critical_hits;
-                                    combined.total_damage_dealt += stats.total_damage_dealt;
-                                    combined.hit_damage += stats.hit_damage;
-                                    combined.crit_damage += stats.crit_damage;
-                                    
-                                    // Combine hit damage by type
-                                    for (dtype, amount) in &stats.hit_damage_by_type {
-                                        *combined.hit_damage_by_type.entry(dtype.clone()).or_default() += *amount;
-                                    }
-                                    
-                                    // Combine crit damage by type
-                                    for (dtype, amount) in &stats.crit_damage_by_type {
-                                        *combined.crit_damage_by_type.entry(dtype.clone()).or_default() += *amount;
-                                    }
-                                    combined.times_attacked += stats.times_attacked;
-                                    combined.total_damage_received += stats.total_damage_received;
-                                    combined.total_damage_absorbed += stats.total_damage_absorbed;
-                                    
-                                    // Combine damage sources
-                                    for (source, amount) in &stats.damage_by_source_dealt {
-                                        *combined.damage_by_source_dealt.entry(source.clone()).or_default() += *amount;
-                                    }
-                                    
-                                    // Combine damage by source and type
-                                    for (source, type_map) in &stats.damage_by_source_and_type_dealt {
-                                        let combined_source_map = combined.damage_by_source_and_type_dealt.entry(source.clone()).or_default();
-                                        for (dtype, amount) in type_map {
-                                            *combined_source_map.entry(dtype.clone()).or_default() += *amount;
-                                        }
-                                    }
-                                    
-                                    // Combine damage sources received
-                                    for (source, amount) in &stats.damage_by_source_received {
-                                        *combined.damage_by_source_received.entry(source.clone()).or_default() += *amount;
-                                    }
-                                    
-                                    // Combine damage by source and type received
-                                    for (source, type_map) in &stats.damage_by_source_and_type_received {
-                                        let combined_source_map = combined.damage_by_source_and_type_received.entry(source.clone()).or_default();
-                                        for (dtype, amount) in type_map {
-                                            *combined_source_map.entry(dtype.clone()).or_default() += *amount;
-                                        }
-                                    }
-                                    
-                                    // Combine absorbed damage by type
-                                    for (dtype, amount) in &stats.absorbed_by_type {
-                                        *combined.absorbed_by_type.entry(dtype.clone()).or_default() += *amount;
-                                    }
-                                    
-                                    // Update timing for combined stats
-                                    if let Some(first) = stats.first_action_time {
-                                        combined.first_action_time = Some(
-                                            combined.first_action_time.map_or(first, |existing| existing.min(first))
-                                        );
-                                    }
-                                    if let Some(last) = stats.last_action_time {
-                                        combined.last_action_time = Some(
-                                            combined.last_action_time.map_or(last, |existing| existing.max(last))
-                                        );
-                                    }
-                                }
-                            }
-                            
-                            Some(combined_stats)
-                        } else {
-                            // Specific encounter selected
-                            if let Some(encounter) = encounters.get(&selected_id) {
-                                Some(encounter.stats.clone())
-                            } else {
-                                None
-                            }
-                        }
-                    } else {
-                        // Current fight
-                        if let Ok(current_id) = self.current_encounter_id.try_lock() {
-                            if let Some(id) = *current_id {
-                                if let Some(encounter) = encounters.get(&id) {
-                                    Some(encounter.stats.clone())
-                                } else {
-                                    None
-                                }
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
-                    }
-                }
-                Err(_) => None,
-            };
+            // Get the stats data using the new system
+            let stats_to_display = Some(self.get_current_stats());
             
             // Now display the UI with the collected data
             if let Some(stats_map) = stats_to_display {
@@ -943,8 +1195,20 @@ struct PendingSpell {
     had_damage_immunity: bool, // Track if this spell had damage immunity absorption after spell resist
 }
 
+/// Tracks long-duration spells (missile storms) that last 6 seconds
+#[derive(Debug, Clone)]
+struct LongDurationSpell {
+    caster: String,
+    target: String,
+    spell: String,
+    timestamp: u64,
+    had_save_roll: bool,
+    had_damage_immunity: bool,
+}
+
 lazy_static! {
-    static ref RE_ATTACK: Regex = Regex::new(r"^(?:Off Hand : )?(?:Sneak Attack : )?(?P<attacker>.+?) attacks (?P<target>.+?) : \*(?P<result>hit|miss|critical hit)\*").unwrap();
+    static ref RE_ATTACK: Regex = Regex::new(r"^(?:[^:]+: )*(?P<attacker>.+?) attacks (?P<target>.+?) : (?:\*target concealed: (?P<concealment>\d+)%\* : )?\*(?P<result>hit|miss|critical hit)\*").unwrap();
+    static ref RE_CONCEALMENT: Regex = Regex::new(r"^(?:[^:]+: )*(?P<attacker>.+?) attacks (?P<target>.+?) : \*target concealed: (?P<concealment>\d+)%\* : \(.+\)").unwrap();
     static ref RE_DAMAGE: Regex = Regex::new(r"^(?P<attacker>.+?) damages (?P<target>.+?): (?P<total>\d+) \((?P<breakdown>.+)\)").unwrap();
     static ref RE_ABSORB: Regex = Regex::new(r"^(?P<target>.+?) : Damage Immunity absorbs (?P<amount>\d+) point\(s\) of (?P<type>\w+)").unwrap();
     static ref RE_TIMESTAMP: Regex = Regex::new(r"^\[CHAT WINDOW TEXT\] \[([^\]]+)\]").unwrap();
@@ -955,13 +1219,32 @@ lazy_static! {
 }
 
 enum ParsedLine {
-    Attack { attacker: String, target: String, result: String, timestamp: u64 },
+    Attack { attacker: String, target: String, result: String, concealment: bool, timestamp: u64 },
     Damage { attacker: String, target: String, total: u32, breakdown: HashMap<String, u32>, timestamp: u64 },
     Absorb { target: String, amount: u32, dtype: String, timestamp: u64 },
     SpellResist { target: String, spell: String, result: String, timestamp: u64 },
     Save { target: String, save_type: String, element: String, result: String, timestamp: u64 },
     Casting { caster: String, spell: String, timestamp: u64 },
     Casts { caster: String, spell: String, timestamp: u64 },
+}
+
+fn is_long_duration_spell(spell: &str) -> bool {
+    matches!(spell, 
+        "Isaac's Greater Missile Storm" | 
+        "Isaac's Lesser Missile Storm" | 
+        "Magic Missile" | 
+        "Flame Arrow" | 
+        "Ball Lightning"
+    )
+}
+
+fn get_spell_damage_type(spell: &str) -> Option<&'static str> {
+    match spell {
+        "Flame Arrow" => Some("Fire"),
+        "Ball Lightning" => Some("Electrical"),
+        "Isaac's Greater Missile Storm" | "Isaac's Lesser Missile Storm" | "Magic Missile" => Some("Magical"),
+        _ => None,
+    }
 }
 
 fn parse_timestamp(timestamp_str: &str) -> u64 {
@@ -1033,10 +1316,23 @@ fn parse_log_line(line: &str) -> Option<ParsedLine> {
     }
 
     if let Some(caps) = RE_ATTACK.captures(clean_line) {
+        let concealment = caps.name("concealment").is_some();
         return Some(ParsedLine::Attack {
             attacker: caps["attacker"].trim().to_string(),
             target: caps["target"].trim().to_string(),
             result: caps["result"].to_string(),
+            concealment,
+            timestamp,
+        });
+    }
+
+    // Check for concealment attacks (which are actually misses according to user clarification)
+    if let Some(caps) = RE_CONCEALMENT.captures(clean_line) {
+        return Some(ParsedLine::Attack {
+            attacker: caps["attacker"].trim().to_string(),
+            target: caps["target"].trim().to_string(),
+            result: "miss".to_string(),
+            concealment: true,
             timestamp,
         });
     }
@@ -1070,7 +1366,7 @@ fn parse_log_line(line: &str) -> Option<ParsedLine> {
     None
 }
 
-fn find_latest_log_file(dir: &Path) -> Option<PathBuf> {
+fn find_latest_log_file_in_dir(dir: &Path) -> Option<PathBuf> {
     fs::read_dir(dir).ok()?.filter_map(|entry| entry.ok())
         .filter(|entry| {
             let path = entry.path();
@@ -1079,6 +1375,163 @@ fn find_latest_log_file(dir: &Path) -> Option<PathBuf> {
         })
         .max_by_key(|entry| entry.metadata().ok().and_then(|m| m.modified().ok()))
         .map(|entry| entry.path())
+}
+
+fn find_latest_log_file() -> Option<PathBuf> {
+    if cfg!(windows) {
+        // Try OneDrive path first
+        let onedrive_path = get_onedrive_logs_path();
+        if let Some(log_file) = find_latest_log_file_in_dir(&onedrive_path) {
+            return Some(log_file);
+        }
+        
+        // Try regular Documents path
+        let regular_path = get_regular_logs_path();
+        if let Some(log_file) = find_latest_log_file_in_dir(&regular_path) {
+            return Some(log_file);
+        }
+        
+        None
+    } else {
+        // Unix-like systems: use existing logic
+        let log_dir = get_unix_logs_path();
+        find_latest_log_file_in_dir(&log_dir)
+    }
+}
+
+fn get_onedrive_logs_path() -> PathBuf {
+    let mut path = PathBuf::new();
+    if let Ok(home) = std::env::var("USERPROFILE") {
+        path.push(home);
+    } else {
+        path.push("C:\\Users");
+        if let Ok(username) = std::env::var("USERNAME") {
+            path.push(username);
+        } else {
+            path.push("Default");
+        }
+    }
+    path.push("OneDrive");
+    path.push("Documents");
+    path.push("Neverwinter Nights");
+    path.push("logs");
+    path
+}
+
+fn get_regular_logs_path() -> PathBuf {
+    let mut path = PathBuf::new();
+    if let Ok(home) = std::env::var("USERPROFILE") {
+        path.push(home);
+    } else {
+        path.push("C:\\Users");
+        if let Ok(username) = std::env::var("USERNAME") {
+            path.push(username);
+        } else {
+            path.push("Default");
+        }
+    }
+    path.push("Documents");
+    path.push("Neverwinter Nights");
+    path.push("logs");
+    path
+}
+
+fn get_unix_logs_path() -> PathBuf {
+    let mut path = PathBuf::new();
+    if let Ok(home) = std::env::var("HOME") {
+        path.push(home);
+    } else {
+        path.push("/home");
+        if let Ok(user) = std::env::var("USER") {
+            path.push(user);
+        } else {
+            path.push("default");
+        }
+    }
+    path.push(".local");
+    path.push("share");
+    path.push("Neverwinter Nights");
+    path.push("logs");
+    path
+}
+
+fn cleanup_old_log_files() -> io::Result<usize> {
+    let mut cleaned_count = 0;
+    let one_day_ago = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() - 86400) // 86400 seconds = 1 day
+        .unwrap_or(0);
+    
+    if cfg!(windows) {
+        // Clean both OneDrive and regular paths on Windows
+        let paths = vec![get_onedrive_logs_path(), get_regular_logs_path()];
+        
+        for log_dir in paths {
+            if log_dir.exists() {
+                let entries = fs::read_dir(&log_dir)?;
+                for entry in entries.filter_map(|e| e.ok()) {
+                    let path = entry.path();
+                    if path.is_file() {
+                        if let Some(filename) = path.file_name().and_then(|s| s.to_str()) {
+                            if filename.starts_with("nwclientLog") && filename.ends_with(".txt") {
+                                if let Ok(metadata) = path.metadata() {
+                                    if let Ok(modified) = metadata.modified() {
+                                        if let Ok(duration) = modified.duration_since(UNIX_EPOCH) {
+                                            if duration.as_secs() < one_day_ago {
+                                                match fs::remove_file(&path) {
+                                                    Ok(_) => {
+                                                        println!("Deleted old log file: {:?}", path);
+                                                        cleaned_count += 1;
+                                                    }
+                                                    Err(e) => {
+                                                        println!("Failed to delete {:?}: {}", path, e);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        // Clean Unix path
+        let log_dir = get_unix_logs_path();
+        if log_dir.exists() {
+            let entries = fs::read_dir(&log_dir)?;
+            for entry in entries.filter_map(|e| e.ok()) {
+                let path = entry.path();
+                if path.is_file() {
+                    if let Some(filename) = path.file_name().and_then(|s| s.to_str()) {
+                        if filename.starts_with("nwclientLog") && filename.ends_with(".txt") {
+                            if let Ok(metadata) = path.metadata() {
+                                if let Ok(modified) = metadata.modified() {
+                                    if let Ok(duration) = modified.duration_since(UNIX_EPOCH) {
+                                        if duration.as_secs() < one_day_ago {
+                                            match fs::remove_file(&path) {
+                                                Ok(_) => {
+                                                    println!("Deleted old log file: {:?}", path);
+                                                    cleaned_count += 1;
+                                                }
+                                                Err(e) => {
+                                                    println!("Failed to delete {:?}: {}", path, e);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    Ok(cleaned_count)
 }
 
 /// Processes the entire log file to set up historical encounters
@@ -1090,15 +1543,26 @@ fn process_parsed_line(
     spell_contexts: &mut Vec<SpellContext>,
     pending_attacks: &mut Vec<PendingAttack>,
     pending_spells: &mut Vec<PendingSpell>,
+    long_duration_spells: &mut Vec<LongDurationSpell>,
     encounters: &Arc<Mutex<HashMap<u64, Encounter>>>,
     encounter_counter: &Arc<Mutex<u64>>
 ) {
-    const ENCOUNTER_TIMEOUT: u64 = 12;
+    const ENCOUNTER_TIMEOUT: u64 = 6;
     
-    // Check if we need to start a new encounter
-    let should_start_new = current_encounter.is_none() || 
+    // Only consider damage > 0 events for encounter timeout calculations
+    let should_update_combat_time = match &parsed {
+        ParsedLine::Damage { total, .. } => *total > 0,
+        _ => false,
+    };
+    
+    // Check if we need to start a new encounter (only based on damage > 0 events)
+    let should_start_new = if should_update_combat_time {
+        current_encounter.is_none() || 
         (combat_time > *last_combat_time && 
-         combat_time.saturating_sub(*last_combat_time) > ENCOUNTER_TIMEOUT);
+         combat_time.saturating_sub(*last_combat_time) > ENCOUNTER_TIMEOUT)
+    } else {
+        current_encounter.is_none()  // Only start new if no encounter exists
+    };
     
     if should_start_new {
         let new_id = {
@@ -1115,9 +1579,13 @@ fn process_parsed_line(
         spell_contexts.clear();
         pending_attacks.clear();
         pending_spells.clear();
+        long_duration_spells.clear();
     }
     
-    *last_combat_time = combat_time;
+    // Only update last_combat_time for damage > 0 events (for timeout calculations)
+    if should_update_combat_time {
+        *last_combat_time = combat_time;
+    }
     
     if let Some(encounter_id) = *current_encounter {
         let mut encounters_lock = encounters.lock().unwrap();
@@ -1133,37 +1601,14 @@ fn process_parsed_line(
                     // Clear existing pending spells since a new spell resist indicates previous spells didn't result in damage
                     pending_spells.clear();
                     
-                    // Find or create spell context for this spell
-                    let mut found = false;
-                    for ctx in spell_contexts.iter_mut() {
-                        if ctx.spell == spell && !ctx.affected_targets.contains(&target) {
-                            ctx.affected_targets.push(target.clone());
-                            // Create pending spell for this target
-                            pending_spells.push(PendingSpell {
-                                caster: ctx.caster.clone(),
-                                target: target.clone(),
-                                spell: spell.clone(),
-                                timestamp: combat_time,
-                                had_save_roll: false,
-                                had_damage_immunity: false,
-                            });
-                            found = true;
-                            break;
-                        }
-                    }
+                    // Check if this is a long-duration spell
+                    let is_long_duration = is_long_duration_spell(&spell);
                     
-                    // If no context found, create one
-                    if !found {
-                        let new_context = SpellContext {
+                    if is_long_duration {
+                        // For long-duration spells, always create a new tracking entry per target
+                        // This ensures each spell resist gets its own tracking regardless of spell type
+                        long_duration_spells.push(LongDurationSpell {
                             caster: "Unknown Caster".to_string(), // Will be updated when we see damage
-                            spell: spell.clone(),
-                            affected_targets: vec![target.clone()],
-                            timestamp: combat_time,
-                        };
-                        
-                        // Create pending spell for this target
-                        pending_spells.push(PendingSpell {
-                            caster: "Unknown Caster".to_string(),
                             target: target.clone(),
                             spell: spell.clone(),
                             timestamp: combat_time,
@@ -1171,7 +1616,64 @@ fn process_parsed_line(
                             had_damage_immunity: false,
                         });
                         
-                        spell_contexts.push(new_context);
+                        // Also maintain spell context for consistency
+                        let mut found = false;
+                        for ctx in spell_contexts.iter_mut() {
+                            if ctx.spell == spell && !ctx.affected_targets.contains(&target) {
+                                ctx.affected_targets.push(target.clone());
+                                found = true;
+                                break;
+                            }
+                        }
+                        
+                        if !found {
+                            let new_context = SpellContext {
+                                caster: "Unknown Caster".to_string(),
+                                spell: spell.clone(),
+                                affected_targets: vec![target.clone()],
+                                timestamp: combat_time,
+                            };
+                            spell_contexts.push(new_context);
+                        }
+                    } else {
+                        // For regular spells, use the original logic
+                        let mut found = false;
+                        for ctx in spell_contexts.iter_mut() {
+                            if ctx.spell == spell && !ctx.affected_targets.contains(&target) {
+                                ctx.affected_targets.push(target.clone());
+                                
+                                pending_spells.push(PendingSpell {
+                                    caster: ctx.caster.clone(),
+                                    target: target.clone(),
+                                    spell: spell.clone(),
+                                    timestamp: combat_time,
+                                    had_save_roll: false,
+                                    had_damage_immunity: false,
+                                });
+                                found = true;
+                                break;
+                            }
+                        }
+                        
+                        if !found {
+                            let new_context = SpellContext {
+                                caster: "Unknown Caster".to_string(),
+                                spell: spell.clone(),
+                                affected_targets: vec![target.clone()],
+                                timestamp: combat_time,
+                            };
+                            
+                            pending_spells.push(PendingSpell {
+                                caster: "Unknown Caster".to_string(),
+                                target: target.clone(),
+                                spell: spell.clone(),
+                                timestamp: combat_time,
+                                had_save_roll: false,
+                                had_damage_immunity: false,
+                            });
+                            
+                            spell_contexts.push(new_context);
+                        }
                     }
                 }
                 ParsedLine::Save { target, .. } => {
@@ -1187,11 +1689,17 @@ fn process_parsed_line(
                                     pending_spell.had_save_roll = true;
                                 }
                             }
+                            // Mark any long-duration spells for this target as having had a save roll
+                            for long_spell in long_duration_spells.iter_mut() {
+                                if long_spell.target == target && long_spell.spell == ctx.spell {
+                                    long_spell.had_save_roll = true;
+                                }
+                            }
                             break;
                         }
                     }
                 }
-                ParsedLine::Attack { attacker, target, result, timestamp } => {
+                ParsedLine::Attack { attacker, target, result, concealment, timestamp } => {
                     // Clear pending spells when an attack roll happens
                     pending_spells.clear();
                     
@@ -1207,7 +1715,12 @@ fn process_parsed_line(
                                 is_crit: false,
                             });
                         }
-                        "miss" => attacker_stats.misses += 1,
+                        "miss" => {
+                            attacker_stats.misses += 1;
+                            if concealment {
+                                attacker_stats.concealment_dodges += 1;
+                            }
+                        }
                         "critical hit" => {
                             attacker_stats.critical_hits += 1;
                             pending_attacks.push(PendingAttack {
@@ -1222,44 +1735,113 @@ fn process_parsed_line(
                     encounter.stats.entry(target).or_default().times_attacked += 1;
                 }
                 ParsedLine::Damage { attacker, target, total, breakdown, timestamp } => {
-                    // Determine damage source - prioritize spells with save rolls or damage immunity after spell resistance
-                    let spell_with_indicators = pending_spells.iter().enumerate().find(|(_, spell)| 
-                        (spell.caster == attacker || spell.caster == "Unknown Caster") && 
-                        spell.target == target && 
-                        (spell.had_save_roll || spell.had_damage_immunity));
-                    
-                    let oldest_spell = spell_with_indicators.or_else(|| {
-                        pending_spells.iter().enumerate().find(|(_, spell)| 
-                            (spell.caster == attacker || spell.caster == "Unknown Caster") && spell.target == target)
+                    // Clean up expired long-duration spells (older than 6 seconds)
+                    long_duration_spells.retain(|spell| {
+                        combat_time.saturating_sub(spell.timestamp) <= 6
                     });
                     
-                    let oldest_attack = {
-                        let mut oldest_idx = None;
-                        let mut oldest_timestamp = u64::MAX;
+                    // STEP 1: Check if this damage matches any active long-duration spells
+                    let matching_long_duration_spell = long_duration_spells.iter().find(|spell| {
+                        // Check if caster and target match
+                        let caster_matches = spell.caster == attacker || spell.caster == "Unknown Caster";
+                        let target_matches = spell.target == target;
                         
-                        for (idx, attack) in pending_attacks.iter().enumerate() {
-                            if attack.attacker == attacker && attack.target == target && attack.timestamp < oldest_timestamp {
-                                oldest_idx = Some(idx);
-                                oldest_timestamp = attack.timestamp;
+                        if !caster_matches || !target_matches {
+                            return false;
+                        }
+                        
+                        // Check if damage type matches the spell's expected damage type EXCLUSIVELY
+                        if let Some(expected_type) = get_spell_damage_type(&spell.spell) {
+                            // For specific damage type spells, only match if the damage contains ONLY that type
+                            breakdown.len() == 1 && breakdown.contains_key(expected_type)
+                        } else {
+                            // For unspecified damage types, match any damage
+                            true
+                        }
+                    });
+                    
+                    // If we found a matching long-duration spell, use it and don't interfere with other tracking
+                    let (damage_source, is_from_crit, is_weapon_buff_damage) = if let Some(long_spell) = matching_long_duration_spell {
+                        let spell_name = long_spell.spell.clone();
+                        let caster_was_unknown = long_spell.caster == "Unknown Caster";
+                        
+                        // Update spell context caster if it was unknown
+                        if caster_was_unknown {
+                            for ctx in spell_contexts.iter_mut() {
+                                if ctx.spell == spell_name && ctx.caster == "Unknown Caster" {
+                                    ctx.caster = attacker.clone();
+                                    break;
+                                }
+                            }
+                            
+                            // Also update all long-duration spells with unknown caster
+                            for long_spell_mut in long_duration_spells.iter_mut() {
+                                if long_spell_mut.spell == spell_name && long_spell_mut.caster == "Unknown Caster" {
+                                    long_spell_mut.caster = attacker.clone();
+                                }
                             }
                         }
-                        oldest_idx.map(|idx| (idx, oldest_timestamp))
-                    };
-                    
-                    // Check if this damage is exclusively Fire or Acid (weapon buff)
-                    let is_weapon_buff = breakdown.len() == 1 && 
-                        (breakdown.contains_key("Fire") || breakdown.contains_key("Acid"));
-                    
-                    let (damage_source, is_from_crit, is_weapon_buff_damage) = if is_weapon_buff && !pending_attacks.is_empty() && pending_spells.is_empty() {
-                        // This is weapon buff damage, count as Attack but don't consume the attack
-                        ("Attack".to_string(), false, true)
+                        
+                        (format!("Spell: {}", spell_name), false, false)
                     } else {
-                        match (oldest_spell, oldest_attack) {
-                            (Some((spell_idx, spell)), Some((attack_idx, attack_timestamp))) => {
-                                // Both spell and attack found - prioritize spell with save roll or damage immunity, otherwise use timestamp
-                                if spell.had_save_roll || spell.had_damage_immunity || spell.timestamp <= attack_timestamp {
-                                    let pending_spell = &pending_spells[spell_idx];
-                                    // Update spell context caster if it was unknown
+                        // STEP 2: No long-duration spell matched, use normal attack/spell logic
+                        
+                        // Find spells with indicators
+                        let spell_with_indicators = pending_spells.iter().enumerate().find(|(_, spell)| 
+                            (spell.caster == attacker || spell.caster == "Unknown Caster") && 
+                            spell.target == target && 
+                            (spell.had_save_roll || spell.had_damage_immunity));
+                        
+                        let oldest_spell = spell_with_indicators.or_else(|| {
+                            pending_spells.iter().enumerate().find(|(_, spell)| 
+                                (spell.caster == attacker || spell.caster == "Unknown Caster") && spell.target == target)
+                        });
+                    
+                        let oldest_attack = {
+                            let mut oldest_idx = None;
+                            let mut oldest_timestamp = u64::MAX;
+                            
+                            for (idx, attack) in pending_attacks.iter().enumerate() {
+                                if attack.attacker == attacker && attack.target == target && attack.timestamp < oldest_timestamp {
+                                    oldest_idx = Some(idx);
+                                    oldest_timestamp = attack.timestamp;
+                                }
+                            }
+                            oldest_idx.map(|idx| (idx, oldest_timestamp))
+                        };
+                        
+                        // Check if this damage is exclusively Fire (weapon buff)
+                        let is_weapon_buff = breakdown.len() == 1 && breakdown.contains_key("Fire");
+                        
+                        if is_weapon_buff && !pending_attacks.is_empty() && pending_spells.is_empty() {
+                            // This is weapon buff damage, count as Attack but don't consume the attack
+                            ("Attack".to_string(), false, true)
+                        } else {
+                            match (oldest_spell, oldest_attack) {
+                                (Some((spell_idx, spell)), Some((attack_idx, attack_timestamp))) => {
+                                    // Both spell and attack found - prioritize spell with save roll or damage immunity, otherwise use timestamp
+                                    if spell.had_save_roll || spell.had_damage_immunity || spell.timestamp <= attack_timestamp {
+                                        let pending_spell = pending_spells.remove(spell_idx);
+                                        
+                                        // Update spell context caster if it was unknown
+                                        if pending_spell.caster == "Unknown Caster" {
+                                            for ctx in spell_contexts.iter_mut() {
+                                                if ctx.spell == pending_spell.spell && ctx.caster == "Unknown Caster" {
+                                                    ctx.caster = attacker.clone();
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        (format!("Spell: {}", pending_spell.spell), false, false)
+                                    } else {
+                                        let attack = pending_attacks.remove(attack_idx);
+                                        ("Attack".to_string(), attack.is_crit, false)
+                                    }
+                                },
+                                (Some((spell_idx, _)), None) => {
+                                    // Only spell found
+                                    let pending_spell = pending_spells.remove(spell_idx);
+                                    
                                     if pending_spell.caster == "Unknown Caster" {
                                         for ctx in spell_contexts.iter_mut() {
                                             if ctx.spell == pending_spell.spell && ctx.caster == "Unknown Caster" {
@@ -1269,32 +1851,16 @@ fn process_parsed_line(
                                         }
                                     }
                                     (format!("Spell: {}", pending_spell.spell), false, false)
-                                } else {
+                                },
+                                (None, Some((attack_idx, _))) => {
+                                    // Only attack found
                                     let attack = pending_attacks.remove(attack_idx);
                                     ("Attack".to_string(), attack.is_crit, false)
+                                },
+                                (None, None) => {
+                                    // Neither found
+                                    ("Unknown".to_string(), false, false)
                                 }
-                            },
-                            (Some((spell_idx, _)), None) => {
-                                // Only spell found
-                                let pending_spell = &pending_spells[spell_idx];
-                                if pending_spell.caster == "Unknown Caster" {
-                                    for ctx in spell_contexts.iter_mut() {
-                                        if ctx.spell == pending_spell.spell && ctx.caster == "Unknown Caster" {
-                                            ctx.caster = attacker.clone();
-                                            break;
-                                        }
-                                    }
-                                }
-                                (format!("Spell: {}", pending_spell.spell), false, false)
-                            },
-                            (None, Some((attack_idx, _))) => {
-                                // Only attack found
-                                let attack = pending_attacks.remove(attack_idx);
-                                ("Attack".to_string(), attack.is_crit, false)
-                            },
-                            (None, None) => {
-                                // Neither found
-                                ("Unknown".to_string(), false, false)
                             }
                         }
                     };
@@ -1305,6 +1871,25 @@ fn process_parsed_line(
                         attacker_stats.update_action_time(timestamp);
                         attacker_stats.total_damage_dealt += total;
                         *attacker_stats.damage_by_source_dealt.entry(damage_source.clone()).or_default() += total;
+                        
+                        // Track damage by target
+                        *attacker_stats.damage_by_target_dealt.entry(target.clone()).or_default() += total;
+                        *attacker_stats.damage_by_target_and_source_dealt
+                            .entry(target.clone())
+                            .or_default()
+                            .entry(damage_source.clone())
+                            .or_default() += total;
+                        
+                        // Track damage by target, source, and type
+                        for (damage_type, &amount) in &breakdown {
+                            *attacker_stats.damage_by_target_source_and_type_dealt
+                                .entry(target.clone())
+                                .or_default()
+                                .entry(damage_source.clone())
+                                .or_default()
+                                .entry(damage_type.clone())
+                                .or_default() += amount;
+                        }
                         
                         // Track hit vs crit vs weapon buff damage separately for attacks
                         if damage_source == "Attack" {
@@ -1325,10 +1910,25 @@ fn process_parsed_line(
                             if damage_source == "Attack" {
                                 if is_weapon_buff_damage {
                                     *attacker_stats.weapon_buff_damage_by_type.entry(damage_type.clone()).or_default() += amount;
+                                    *attacker_stats.weapon_buff_damage_by_target_type
+                                        .entry(target.clone())
+                                        .or_default()
+                                        .entry(damage_type.clone())
+                                        .or_default() += amount;
                                 } else if is_from_crit {
                                     *attacker_stats.crit_damage_by_type.entry(damage_type.clone()).or_default() += amount;
+                                    *attacker_stats.crit_damage_by_target_type
+                                        .entry(target.clone())
+                                        .or_default()
+                                        .entry(damage_type.clone())
+                                        .or_default() += amount;
                                 } else {
                                     *attacker_stats.hit_damage_by_type.entry(damage_type.clone()).or_default() += amount;
+                                    *attacker_stats.hit_damage_by_target_type
+                                        .entry(target.clone())
+                                        .or_default()
+                                        .entry(damage_type.clone())
+                                        .or_default() += amount;
                                 }
                             }
                             
@@ -1351,6 +1951,14 @@ fn process_parsed_line(
                         let received_source = format!("{} ({})", attacker, damage_source);
                         *target_stats.damage_by_source_received.entry(received_source.clone()).or_default() += total;
                         
+                        // Track damage by attacker
+                        *target_stats.damage_by_attacker_received.entry(attacker.clone()).or_default() += total;
+                        *target_stats.damage_by_attacker_and_source_received
+                            .entry(attacker.clone())
+                            .or_default()
+                            .entry(damage_source.clone())
+                            .or_default() += total;
+                        
                         for (damage_type, &amount) in &breakdown {
                             *target_stats.damage_by_type_received.entry(damage_type.clone()).or_default() += amount;
                             // Track damage types per source for received damage
@@ -1372,6 +1980,13 @@ fn process_parsed_line(
                     for pending_spell in pending_spells.iter_mut() {
                         if pending_spell.target == target {
                             pending_spell.had_damage_immunity = true;
+                        }
+                    }
+                    
+                    // Mark any long-duration spells for this target as having damage immunity absorption
+                    for long_spell in long_duration_spells.iter_mut() {
+                        if long_spell.target == target {
+                            long_spell.had_damage_immunity = true;
                         }
                     }
                 }
@@ -1397,6 +2012,7 @@ fn process_full_log_file(
     let mut spell_contexts: Vec<SpellContext> = Vec::new();
     let mut pending_attacks: Vec<PendingAttack> = Vec::new();
     let mut pending_spells: Vec<PendingSpell> = Vec::new();
+    let mut long_duration_spells: Vec<LongDurationSpell> = Vec::new();
     
     for line in content_str.lines() {
         if let Some(parsed) = parse_log_line(&line) {
@@ -1418,6 +2034,7 @@ fn process_full_log_file(
                 &mut spell_contexts,
                 &mut pending_attacks,
                 &mut pending_spells,
+                &mut long_duration_spells,
                 &encounters,
                 &encounter_counter
             );
@@ -1449,7 +2066,6 @@ fn get_current_timestamp() -> u64 {
 
 /// This function runs in a background thread, watching and parsing the log file.
 fn log_watcher_thread(
-    log_dir: PathBuf, 
     encounters: Arc<Mutex<HashMap<u64, Encounter>>>,
     current_encounter_id: Arc<Mutex<Option<u64>>>,
     encounter_counter: Arc<Mutex<u64>>
@@ -1461,9 +2077,23 @@ fn log_watcher_thread(
     let mut spell_contexts: Vec<SpellContext> = Vec::new();
     let mut pending_attacks: Vec<PendingAttack> = Vec::new();
     let mut pending_spells: Vec<PendingSpell> = Vec::new();
+    let mut long_duration_spells: Vec<LongDurationSpell> = Vec::new();
+
+    // Perform cleanup of old log files at startup
+    match cleanup_old_log_files() {
+        Ok(count) => {
+            if count > 0 {
+                println!("Cleaned up {} old log files", count);
+            }
+        }
+        Err(e) => println!("Error during log cleanup: {}", e),
+    }
+
+    let mut cleanup_counter = 0;
+    const CLEANUP_INTERVAL: u32 = 6000; // Clean up every 10 minutes (6000 * 100ms)
 
     loop {
-        if let Some(latest_log_path) = find_latest_log_file(&log_dir) {
+        if let Some(latest_log_path) = find_latest_log_file() {
             if current_log_path.as_ref() != Some(&latest_log_path) {
                 println!("\n--- Detected new log file: {:?} ---\n", latest_log_path);
                 current_log_path = Some(latest_log_path.clone());
@@ -1475,6 +2105,7 @@ fn log_watcher_thread(
                 spell_contexts.clear();
                 pending_attacks.clear();
                 pending_spells.clear();
+                long_duration_spells.clear();
                 
                 // Process the entire log file to set up historical encounters
                 println!("Processing entire log file for historical data...");
@@ -1530,6 +2161,7 @@ fn log_watcher_thread(
                                             &mut spell_contexts,
                                             &mut pending_attacks,
                                             &mut pending_spells,
+                                            &mut long_duration_spells,
                                             &encounters,
                                             &encounter_counter
                                         );
@@ -1562,6 +2194,21 @@ fn log_watcher_thread(
                 }
             }
         }
+        
+        // Periodic cleanup of old log files
+        cleanup_counter += 1;
+        if cleanup_counter >= CLEANUP_INTERVAL {
+            cleanup_counter = 0;
+            match cleanup_old_log_files() {
+                Ok(count) => {
+                    if count > 0 {
+                        println!("Periodic cleanup: removed {} old log files", count);
+                    }
+                }
+                Err(e) => println!("Error during periodic cleanup: {}", e),
+            }
+        }
+        
         thread::sleep(Duration::from_millis(100));
     }
 }
@@ -1577,45 +2224,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let counter_clone = encounter_counter.clone();
 
     // Spawn the background thread for log watching.
-    // Determine the log directory based on the operating system
-    let log_dir = if cfg!(windows) {
-        // Windows: C:\Users\{USERNAME}\Documents\Neverwinter Nights\logs
-        let mut path = PathBuf::new();
-        if let Ok(home) = std::env::var("USERPROFILE") {
-            path.push(home);
-        } else {
-            path.push("C:\\Users");
-            if let Ok(username) = std::env::var("USERNAME") {
-                path.push(username);
-            } else {
-                path.push("Default");
-            }
-        }
-        path.push("Documents");
-        path.push("Neverwinter Nights");
-        path.push("logs");
-        path
-    } else {
-        // Unix-like systems: $HOME/.local/share/Neverwinter Nights/logs/
-        let mut path = PathBuf::new();
-        if let Ok(home) = std::env::var("HOME") {
-            path.push(home);
-        } else {
-            path.push("/home");
-            if let Ok(user) = std::env::var("USER") {
-                path.push(user);
-            } else {
-                path.push("default");
-            }
-        }
-        path.push(".local");
-        path.push("share");
-        path.push("Neverwinter Nights");
-        path.push("logs");
-        path
-    };
     thread::spawn(move || {
-        log_watcher_thread(log_dir, encounters_clone, current_encounter_clone, counter_clone);
+        log_watcher_thread(encounters_clone, current_encounter_clone, counter_clone);
     });
 
     // Configure the native window options for a borderless, custom GUI.
@@ -1643,4 +2253,161 @@ fn main() -> Result<(), Box<dyn Error>> {
     )?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_concealment_regex() {
+        let test_line = "Mini Canoon attacks -ANCIENT EVIL | KLAUTH- : *target concealed: 50%* : *hit*";
+        let parsed = parse_log_line(&format!("[CHAT WINDOW TEXT] [Wed Jul 30 14:58:02] {}", test_line));
+        assert!(parsed.is_some(), "Should parse concealment line");
+        
+        if let Some(ParsedLine::Attack { attacker, target, result, concealment, .. }) = parsed {
+            assert_eq!(attacker, "Mini Canoon");
+            assert_eq!(target, "-ANCIENT EVIL | KLAUTH-");
+            assert_eq!(result, "hit");
+            assert!(concealment);
+        } else {
+            panic!("Expected Attack variant");
+        }
+    }
+
+    #[test]
+    fn test_concealment_miss_regex() {
+        let test_line = "Mini Canoon attacks -ANCIENT EVIL | KLAUTH- : *target concealed: 50%* : *miss*";
+        let parsed = parse_log_line(&format!("[CHAT WINDOW TEXT] [Wed Jul 30 14:58:02] {}", test_line));
+        assert!(parsed.is_some(), "Should parse concealment miss line");
+        
+        if let Some(ParsedLine::Attack { attacker, target, result, concealment, .. }) = parsed {
+            assert_eq!(attacker, "Mini Canoon");
+            assert_eq!(target, "-ANCIENT EVIL | KLAUTH-");
+            assert_eq!(result, "miss");
+            assert!(concealment);
+        } else {
+            panic!("Expected Attack variant");
+        }
+    }
+
+    #[test]
+    fn test_normal_attack_regex() {
+        let test_line = "Mini Canoon attacks -ANCIENT EVIL | KLAUTH- : *miss*";
+        let caps = RE_ATTACK.captures(test_line);
+        assert!(caps.is_some(), "Regex should match normal attack line");
+        
+        let caps = caps.unwrap();
+        assert_eq!(caps.name("attacker").unwrap().as_str(), "Mini Canoon");
+        assert_eq!(caps.name("target").unwrap().as_str(), "-ANCIENT EVIL | KLAUTH-");
+        assert_eq!(caps.name("result").unwrap().as_str(), "miss");
+    }
+
+    #[test]
+    fn test_expertise_death_attack_regex() {
+        let test_line = "Expertise : Death Attack : Eviscera attacks Epic Disciple Of Mephisto : *hit*";
+        let caps = RE_ATTACK.captures(test_line);
+        assert!(caps.is_some(), "Regex should match expertise death attack line");
+        
+        let caps = caps.unwrap();
+        assert_eq!(caps.name("attacker").unwrap().as_str(), "Eviscera");
+        assert_eq!(caps.name("target").unwrap().as_str(), "Epic Disciple Of Mephisto");
+        assert_eq!(caps.name("result").unwrap().as_str(), "hit");
+    }
+
+    #[test]
+    fn test_aoo_expertise_death_attack_regex() {
+        let test_line = "Attack Of Opportunity : Expertise : Death Attack : Eviscera attacks Draconic Warrior : *miss*";
+        let caps = RE_ATTACK.captures(test_line);
+        assert!(caps.is_some(), "Regex should match AoO + Expertise + Death Attack line");
+        
+        let caps = caps.unwrap();
+        assert_eq!(caps.name("attacker").unwrap().as_str(), "Eviscera");
+        assert_eq!(caps.name("target").unwrap().as_str(), "Draconic Warrior");
+        assert_eq!(caps.name("result").unwrap().as_str(), "miss");
+    }
+
+    #[test]
+    fn test_improved_expertise_regex() {
+        let test_line = "Improved Expertise : grass cutter X attacks Someone : *miss*";
+        let caps = RE_ATTACK.captures(test_line);
+        assert!(caps.is_some(), "Regex should match Improved Expertise line");
+        
+        let caps = caps.unwrap();
+        assert_eq!(caps.name("attacker").unwrap().as_str(), "grass cutter X");
+        assert_eq!(caps.name("target").unwrap().as_str(), "Someone");
+        assert_eq!(caps.name("result").unwrap().as_str(), "miss");
+    }
+
+    #[test]
+    fn test_sneak_attack_death_attack_regex() {
+        let test_line = "Sneak Attack + Death Attack : Funnelweb attacks AJATAR - GUARDIAN OF HELL : *hit*";
+        let caps = RE_ATTACK.captures(test_line);
+        assert!(caps.is_some(), "Regex should match Sneak Attack + Death Attack line");
+        
+        let caps = caps.unwrap();
+        assert_eq!(caps.name("attacker").unwrap().as_str(), "Funnelweb");
+        assert_eq!(caps.name("target").unwrap().as_str(), "AJATAR - GUARDIAN OF HELL");
+        assert_eq!(caps.name("result").unwrap().as_str(), "hit");
+    }
+
+    #[test]
+    fn test_attack_of_opportunity_regex() {
+        let test_line = "Attack Of Opportunity : Lucky Has Risen attacks AJATAR - GUARDIAN OF HELL : *miss*";
+        let caps = RE_ATTACK.captures(test_line);
+        assert!(caps.is_some(), "Regex should match Attack Of Opportunity line");
+        
+        let caps = caps.unwrap();
+        assert_eq!(caps.name("attacker").unwrap().as_str(), "Lucky Has Risen");
+        assert_eq!(caps.name("target").unwrap().as_str(), "AJATAR - GUARDIAN OF HELL");
+        assert_eq!(caps.name("result").unwrap().as_str(), "miss");
+    }
+
+    #[test]
+    fn test_off_hand_attack_of_opportunity_regex() {
+        let test_line = "Off Hand : Attack Of Opportunity : Din Din Din attacks AJATAR - GUARDIAN OF HELL : *miss*";
+        let caps = RE_ATTACK.captures(test_line);
+        assert!(caps.is_some(), "Regex should match Off Hand + Attack Of Opportunity line");
+        
+        let caps = caps.unwrap();
+        assert_eq!(caps.name("attacker").unwrap().as_str(), "Din Din Din");
+        assert_eq!(caps.name("target").unwrap().as_str(), "AJATAR - GUARDIAN OF HELL");
+        assert_eq!(caps.name("result").unwrap().as_str(), "miss");
+    }
+
+    #[test]
+    fn test_off_hand_regex() {
+        let test_line = "Off Hand : Eviscera attacks AJATAR - GUARDIAN OF HELL : *hit*";
+        let caps = RE_ATTACK.captures(test_line);
+        assert!(caps.is_some(), "Regex should match Off Hand line");
+        
+        let caps = caps.unwrap();
+        assert_eq!(caps.name("attacker").unwrap().as_str(), "Eviscera");
+        assert_eq!(caps.name("target").unwrap().as_str(), "AJATAR - GUARDIAN OF HELL");
+        assert_eq!(caps.name("result").unwrap().as_str(), "hit");
+    }
+
+    #[test]
+    fn test_death_attack_regex() {
+        let test_line = "Death Attack : Domino attacks AJATAR - GUARDIAN OF HELL : *hit*";
+        let caps = RE_ATTACK.captures(test_line);
+        assert!(caps.is_some(), "Regex should match Death Attack line");
+        
+        let caps = caps.unwrap();
+        assert_eq!(caps.name("attacker").unwrap().as_str(), "Domino");
+        assert_eq!(caps.name("target").unwrap().as_str(), "AJATAR - GUARDIAN OF HELL");
+        assert_eq!(caps.name("result").unwrap().as_str(), "hit");
+    }
+
+    #[test]
+    fn test_sneak_attack_regex() {
+        let test_line = "Sneak Attack : Din Din Din attacks Ahriman's Rage : *critical hit*";
+        let caps = RE_ATTACK.captures(test_line);
+        assert!(caps.is_some(), "Regex should match Sneak Attack line");
+        
+        let caps = caps.unwrap();
+        assert_eq!(caps.name("attacker").unwrap().as_str(), "Din Din Din");
+        assert_eq!(caps.name("target").unwrap().as_str(), "Ahriman's Rage");
+        assert_eq!(caps.name("result").unwrap().as_str(), "critical hit");
+    }
 }
