@@ -1,0 +1,9 @@
+[package]
+name = "nwn_parser"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+eframe = "0.32.0"
+lazy_static = "1.4.0"
+regex = "1"

@@ -1,0 +1,62 @@
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:45] SPELL RESIST: 10 AC DUMMY - Chaotic Evil - Boss Damage Reduction attempts to resist: Isaac's Greater Missile Storm - Result:  FAILED
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:45] SPELL RESIST: 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction attempts to resist: Isaac's Greater Missile Storm - Result:  FAILED
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:45] Dank V2 : Initiative Roll : 13 : (9 + 4 = 13)
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:47] 10 AC DUMMY - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 1 point(s) of Magical
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:47] Dank V2 damages 10 AC DUMMY - Chaotic Evil - Boss Damage Reduction: 5 (5 Magical)
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:47] 10 AC DUMMY - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 1 point(s) of Magical
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:47] Dank V2 damages 10 AC DUMMY - Chaotic Evil - Boss Damage Reduction: 2 (2 Magical)
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:47] 10 AC DUMMY - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 1 point(s) of Magical
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:47] Dank V2 damages 10 AC DUMMY - Chaotic Evil - Boss Damage Reduction: 2 (2 Magical)
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:47] 10 AC DUMMY - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 1 point(s) of Magical
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:47] Dank V2 damages 10 AC DUMMY - Chaotic Evil - Boss Damage Reduction: 7 (7 Magical)
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:47] 10 AC DUMMY - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 1 point(s) of Magical
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:47] Dank V2 damages 10 AC DUMMY - Chaotic Evil - Boss Damage Reduction: 8 (8 Magical)
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:48] 10 AC DUMMY - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 1 point(s) of Magical
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:48] Dank V2 damages 10 AC DUMMY - Chaotic Evil - Boss Damage Reduction: 8 (8 Magical)
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:48] Dank V2 casting Magic Missile
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:48] 10 AC DUMMY - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 1 point(s) of Magical
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:48] Dank V2 damages 10 AC DUMMY - Chaotic Evil - Boss Damage Reduction: 9 (9 Magical)
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:48] 10 AC DUMMY - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 1 point(s) of Magical
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:48] Dank V2 damages 10 AC DUMMY - Chaotic Evil - Boss Damage Reduction: 10 (10 Magical)
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:48] 10 AC DUMMY - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 1 point(s) of Magical
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:48] Dank V2 damages 10 AC DUMMY - Chaotic Evil - Boss Damage Reduction: 6 (6 Magical)
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:48] 10 AC DUMMY - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 1 point(s) of Magical
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:48] Dank V2 damages 10 AC DUMMY - Chaotic Evil - Boss Damage Reduction: 4 (4 Magical)
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:48] 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 1 point(s) of Magical
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:48] Dank V2 damages 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction: 2 (2 Magical)
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:48] 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 1 point(s) of Magical
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:48] Dank V2 damages 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction: 6 (6 Magical)
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:49] 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 1 point(s) of Magical
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:49] Dank V2 damages 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction: 5 (5 Magical)
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:49] 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 1 point(s) of Magical
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:49] Dank V2 damages 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction: 5 (5 Magical)
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:49] 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 1 point(s) of Magical
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:49] Dank V2 damages 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction: 6 (6 Magical)
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:49] 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 1 point(s) of Magical
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:49] Dank V2 damages 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction: 6 (6 Magical)
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:49] 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 1 point(s) of Magical
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:49] Dank V2 damages 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction: 6 (6 Magical)
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:49] Dank V2 casts Magic Missile
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:49] SPELL RESIST: 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction attempts to resist: Magic Missile - Result:  FAILED
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:49] 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 1 point(s) of Magical
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:49] Dank V2 damages 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction: 6 (6 Magical)
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:49] 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 1 point(s) of Magical
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:49] Dank V2 damages 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction: 5 (5 Magical)
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:49] 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 1 point(s) of Magical
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:49] Dank V2 damages 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction: 10 (10 Magical)
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:51] 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 1 point(s) of Magical
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:51] Dank V2 damages 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction: 4 (4 Magical)
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:51] 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 1 point(s) of Magical
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:51] Dank V2 damages 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction: 4 (4 Magical)
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:51] 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 1 point(s) of Magical
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:51] Dank V2 damages 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction: 2 (2 Magical)
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:51] 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 1 point(s) of Magical
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:51] Dank V2 damages 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction: 4 (4 Magical)
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:51] 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 1 point(s) of Magical
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:51] Dank V2 damages 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction: 2 (2 Magical)
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:52] 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 1 point(s) of Magical
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:52] Dank V2 damages 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction: 1 (1 Magical)
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:52] 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 1 point(s) of Magical
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:52] Dank V2 damages 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction: 4 (4 Magical)
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:52] 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 1 point(s) of Magical
+[CHAT WINDOW TEXT] [Wed Jul 30 12:32:52] Dank V2 damages 65 AC DUMMY - Chaotic Evil - Boss Damage Reduction: 3 (3 Magical)
