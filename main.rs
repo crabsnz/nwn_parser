@@ -287,17 +287,14 @@ impl NwnLogApp {
                     if let Some(current_id) = *current_id {
                         if let Ok(encounters) = self.encounters.try_lock() {
                             if let Some(encounter) = encounters.get(&current_id) {
-                                // Check if the fight is still active (within 5 seconds)
-                                let current_time = get_current_timestamp();
-                                if current_time >= encounter.end_time && current_time - encounter.end_time <= 5 {
-                                    return encounter.stats.clone();
-                                }
+                                // Always show the current encounter data
+                                return encounter.stats.clone();
                             }
                         }
                     }
                 }
                 
-                // No active fight, return empty stats
+                // No current encounter, return empty stats
                 HashMap::new()
             },
             ViewMode::OverallStats => {
@@ -1159,8 +1156,15 @@ impl eframe::App for NwnLogApp {
     }
     
     /// Keep window background opaque and visible.
-    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        [0.2, 0.2, 0.2, 1.0] // Dark gray, fully opaque
+    fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
+        // Use egui's panel background color for consistent appearance across platforms
+        let color = visuals.panel_fill;
+        [
+            color.r() as f32 / 255.0,
+            color.g() as f32 / 255.0, 
+            color.b() as f32 / 255.0,
+            color.a() as f32 / 255.0
+        ]
     }
 }
 
@@ -2249,7 +2253,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     eframe::run_native(
         "NWN Log Overlay",
         native_options,
-        Box::new(|_cc| Ok(Box::new(app))),
+        Box::new(|cc| {
+            // Set up dark theme consistently across platforms
+            cc.egui_ctx.set_visuals(egui::Visuals::dark());
+            Ok(Box::new(app))
+        }),
     )?;
 
     Ok(())
