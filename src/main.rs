@@ -1156,8 +1156,15 @@ impl eframe::App for NwnLogApp {
     }
     
     /// Keep window background opaque and visible.
-    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        [0.2, 0.2, 0.2, 1.0] // Dark gray, fully opaque
+    fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
+        // Use egui's panel background color for consistent appearance across platforms
+        let color = visuals.panel_fill;
+        [
+            color.r() as f32 / 255.0,
+            color.g() as f32 / 255.0, 
+            color.b() as f32 / 255.0,
+            color.a() as f32 / 255.0
+        ]
     }
 }
 
