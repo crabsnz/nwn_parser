@@ -1,0 +1,19 @@
+[CHAT WINDOW TEXT] [Wed Dec 14 10:30:15] Elara attacks Orc Warrior : *hit*
+[CHAT WINDOW TEXT] [Wed Dec 14 10:30:15] Elara damages Orc Warrior: 25 (18 Physical 7 Fire)
+[CHAT WINDOW TEXT] [Wed Dec 14 10:30:16] Thorin attacks Orc Warrior : *critical hit*
+[CHAT WINDOW TEXT] [Wed Dec 14 10:30:16] Thorin damages Orc Warrior: 42 (35 Physical 7 Cold)
+[CHAT WINDOW TEXT] [Wed Dec 14 10:30:17] Orc Warrior attacks Elara : *hit*
+[CHAT WINDOW TEXT] [Wed Dec 14 10:30:17] Orc Warrior damages Elara: 12 (12 Physical)
+[CHAT WINDOW TEXT] [Wed Dec 14 10:30:18] Aria casts Heal
+[CHAT WINDOW TEXT] [Wed Dec 14 10:30:18] Aria damages Elara: -30 (30 Healing)
+[CHAT WINDOW TEXT] [Wed Dec 14 10:30:19] Elara attacks Orc Warrior : *miss*
+[CHAT WINDOW TEXT] [Wed Dec 14 10:30:20] Thorin attacks Orc Warrior : *hit*
+[CHAT WINDOW TEXT] [Wed Dec 14 10:30:20] Thorin damages Orc Warrior: 18 (15 Physical 3 Cold)
+[CHAT WINDOW TEXT] [Wed Dec 14 10:30:21] Elara attacks Goblin Scout : *hit*
+[CHAT WINDOW TEXT] [Wed Dec 14 10:30:21] Elara damages Goblin Scout: 32 (25 Physical 7 Fire)
+[CHAT WINDOW TEXT] [Wed Dec 14 10:30:22] Goblin Scout attacks Thorin : *hit*
+[CHAT WINDOW TEXT] [Wed Dec 14 10:30:22] Goblin Scout damages Thorin: 8 (8 Physical)
+[CHAT WINDOW TEXT] [Wed Dec 14 10:30:23] Thorin attacks Goblin Scout : *hit*
+[CHAT WINDOW TEXT] [Wed Dec 14 10:30:23] Thorin damages Goblin Scout: 28 (23 Physical 5 Cold)
+[CHAT WINDOW TEXT] [Wed Dec 14 10:30:24] Aria casts Heal
+[CHAT WINDOW TEXT] [Wed Dec 14 10:30:24] Aria damages Thorin: -25 (25 Healing)

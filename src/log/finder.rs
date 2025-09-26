@@ -1,0 +1,172 @@
+use std::fs;
+use std::io;
+use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+pub fn find_latest_log_file_in_dir(dir: &Path) -> Option<PathBuf> {
+    fs::read_dir(dir).ok()?.filter_map(|entry| entry.ok())
+        .filter(|entry| {
+            let path = entry.path();
+            path.is_file() && path.file_name().and_then(|s| s.to_str())
+                .map_or(false, |s| s.starts_with("nwclientLog") && s.ends_with(".txt"))
+        })
+        .max_by_key(|entry| entry.metadata().ok().and_then(|m| m.modified().ok()))
+        .map(|entry| entry.path())
+}
+
+pub fn find_latest_log_file() -> Option<PathBuf> {
+    if cfg!(windows) {
+        // Try OneDrive path first
+        let onedrive_path = get_onedrive_logs_path();
+        if let Some(log_file) = find_latest_log_file_in_dir(&onedrive_path) {
+            return Some(log_file);
+        }
+        
+        // Try regular Documents path
+        let regular_path = get_regular_logs_path();
+        if let Some(log_file) = find_latest_log_file_in_dir(&regular_path) {
+            return Some(log_file);
+        }
+        
+        None
+    } else {
+        // Unix-like systems: use existing logic
+        let log_dir = get_unix_logs_path();
+        find_latest_log_file_in_dir(&log_dir)
+    }
+}
+
+pub fn get_onedrive_logs_path() -> PathBuf {
+    let mut path = PathBuf::new();
+    if let Ok(home) = std::env::var("USERPROFILE") {
+        path.push(home);
+    } else {
+        path.push("C:\\Users");
+        if let Ok(username) = std::env::var("USERNAME") {
+            path.push(username);
+        } else {
+            path.push("Default");
+        }
+    }
+    path.push("OneDrive");
+    path.push("Documents");
+    path.push("Neverwinter Nights");
+    path.push("logs");
+    path
+}
+
+pub fn get_regular_logs_path() -> PathBuf {
+    let mut path = PathBuf::new();
+    if let Ok(home) = std::env::var("USERPROFILE") {
+        path.push(home);
+    } else {
+        path.push("C:\\Users");
+        if let Ok(username) = std::env::var("USERNAME") {
+            path.push(username);
+        } else {
+            path.push("Default");
+        }
+    }
+    path.push("Documents");
+    path.push("Neverwinter Nights");
+    path.push("logs");
+    path
+}
+
+pub fn get_unix_logs_path() -> PathBuf {
+    let mut path = PathBuf::new();
+    if let Ok(home) = std::env::var("HOME") {
+        path.push(home);
+    } else {
+        path.push("/home");
+        if let Ok(user) = std::env::var("USER") {
+            path.push(user);
+        } else {
+            path.push("default");
+        }
+    }
+    path.push(".local");
+    path.push("share");
+    path.push("Neverwinter Nights");
+    path.push("logs");
+    path
+}
+
+pub fn cleanup_old_log_files() -> io::Result<usize> {
+    let mut cleaned_count = 0;
+    let one_day_ago = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() - 86400) // 86400 seconds = 1 day
+        .unwrap_or(0);
+    
+    if cfg!(windows) {
+        // Clean both OneDrive and regular paths on Windows
+        let paths = vec![get_onedrive_logs_path(), get_regular_logs_path()];
+        
+        for log_dir in paths {
+            if log_dir.exists() {
+                let entries = fs::read_dir(&log_dir)?;
+                for entry in entries.filter_map(|e| e.ok()) {
+                    let path = entry.path();
+                    if path.is_file() {
+                        if let Some(filename) = path.file_name().and_then(|s| s.to_str()) {
+                            if filename.starts_with("nwclientLog") && filename.ends_with(".txt") {
+                                if let Ok(metadata) = path.metadata() {
+                                    if let Ok(modified) = metadata.modified() {
+                                        if let Ok(duration) = modified.duration_since(UNIX_EPOCH) {
+                                            if duration.as_secs() < one_day_ago {
+                                                match fs::remove_file(&path) {
+                                                    Ok(_) => {
+                                                        println!("Deleted old log file: {:?}", path);
+                                                        cleaned_count += 1;
+                                                    }
+                                                    Err(e) => {
+                                                        println!("Failed to delete {:?}: {}", path, e);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        // Unix cleanup logic
+        let log_dir = get_unix_logs_path();
+        if log_dir.exists() {
+            let entries = fs::read_dir(&log_dir)?;
+            for entry in entries.filter_map(|e| e.ok()) {
+                let path = entry.path();
+                if path.is_file() {
+                    if let Some(filename) = path.file_name().and_then(|s| s.to_str()) {
+                        if filename.starts_with("nwclientLog") && filename.ends_with(".txt") {
+                            if let Ok(metadata) = path.metadata() {
+                                if let Ok(modified) = metadata.modified() {
+                                    if let Ok(duration) = modified.duration_since(UNIX_EPOCH) {
+                                        if duration.as_secs() < one_day_ago {
+                                            match fs::remove_file(&path) {
+                                                Ok(_) => {
+                                                    println!("Deleted old log file: {:?}", path);
+                                                    cleaned_count += 1;
+                                                }
+                                                Err(e) => {
+                                                    println!("Failed to delete {:?}: {}", path, e);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    Ok(cleaned_count)
+}
