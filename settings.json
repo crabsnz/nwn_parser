@@ -1,0 +1,7 @@
+{
+  "caster_level": 40,
+  "charisma_modifier": 10,
+  "extended_divine_might": false,
+  "extended_divine_shield": false,
+  "buff_warning_seconds": 15
+}

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use crate::models::{Encounter, SpellContext, PendingAttack, PendingSpell, LongDurationSpell};
+use crate::models::{Encounter, SpellContext, PendingAttack, PendingSpell, LongDurationSpell, PlayerRegistry, BuffTracker, AppSettings};
 use crate::parsing::{ParsedLine, parse_log_line, process_parsed_line};
 use crate::log::finder::{find_latest_log_file, cleanup_old_log_files};
 use crate::utils::time::format_duration;
@@ -14,7 +14,10 @@ pub fn process_full_log_file(
     file_path: &Path,
     encounters: Arc<Mutex<HashMap<u64, Encounter>>>,
     current_encounter_id: Arc<Mutex<Option<u64>>>,
-    encounter_counter: Arc<Mutex<u64>>
+    encounter_counter: Arc<Mutex<u64>>,
+    player_registry: Arc<Mutex<PlayerRegistry>>,
+    buff_tracker: Arc<Mutex<BuffTracker>>,
+    settings: &AppSettings
 ) -> io::Result<u64> {
     let file_content = fs::read(file_path)?;
     
@@ -38,6 +41,10 @@ pub fn process_full_log_file(
                 ParsedLine::Save { timestamp, .. } => *timestamp,
                 ParsedLine::Casting { timestamp, .. } => *timestamp,
                 ParsedLine::Casts { timestamp, .. } => *timestamp,
+                ParsedLine::PlayerJoin { timestamp, .. } => *timestamp,
+                ParsedLine::PlayerChat { timestamp, .. } => *timestamp,
+                ParsedLine::PartyChat { timestamp, .. } => *timestamp,
+                ParsedLine::PartyJoin { timestamp, .. } => *timestamp,
             };
             
             process_parsed_line(
@@ -50,7 +57,11 @@ pub fn process_full_log_file(
                 &mut pending_spells,
                 &mut long_duration_spells,
                 &encounters,
-                &encounter_counter
+                &encounter_counter,
+                &player_registry,
+                &buff_tracker,
+                settings,
+                true  // is_historical = true for initial log processing
             );
         }
     }
@@ -74,7 +85,10 @@ pub fn process_full_log_file(
 pub fn log_watcher_thread(
     encounters: Arc<Mutex<HashMap<u64, Encounter>>>,
     current_encounter_id: Arc<Mutex<Option<u64>>>,
-    encounter_counter: Arc<Mutex<u64>>
+    encounter_counter: Arc<Mutex<u64>>,
+    player_registry: Arc<Mutex<PlayerRegistry>>,
+    buff_tracker: Arc<Mutex<BuffTracker>>,
+    settings: Arc<Mutex<AppSettings>>
 ) {
     let mut last_read_position = 0u64;
     let mut current_log_path: Option<PathBuf> = None;
@@ -115,7 +129,14 @@ pub fn log_watcher_thread(
                 
                 // Process the entire log file to set up historical encounters
                 println!("Processing entire log file for historical data...");
-                match process_full_log_file(&latest_log_path, encounters.clone(), current_encounter_id.clone(), encounter_counter.clone()) {
+                // Get current settings for processing
+                let current_settings = if let Ok(settings_guard) = settings.lock() {
+                    settings_guard.clone()
+                } else {
+                    AppSettings::new()
+                };
+
+                match process_full_log_file(&latest_log_path, encounters.clone(), current_encounter_id.clone(), encounter_counter.clone(), player_registry.clone(), buff_tracker.clone(), &current_settings) {
                     Ok(file_size) => {
                         last_read_position = file_size;
                         let encounter_count = encounters.lock().unwrap().len();
@@ -156,8 +177,19 @@ pub fn log_watcher_thread(
                                             ParsedLine::Save { timestamp, .. } => *timestamp,
                                             ParsedLine::Casting { timestamp, .. } => *timestamp,
                                             ParsedLine::Casts { timestamp, .. } => *timestamp,
+                                            ParsedLine::PlayerJoin { timestamp, .. } => *timestamp,
+                                            ParsedLine::PlayerChat { timestamp, .. } => *timestamp,
+                                            ParsedLine::PartyChat { timestamp, .. } => *timestamp,
+                                            ParsedLine::PartyJoin { timestamp, .. } => *timestamp,
                                         };
                                         
+                                        // Get current settings for processing
+                                        let current_settings = if let Ok(settings_guard) = settings.lock() {
+                                            settings_guard.clone()
+                                        } else {
+                                            AppSettings::new()
+                                        };
+
                                         // Use the centralized processing function
                                         process_parsed_line(
                                             parsed,
@@ -169,7 +201,11 @@ pub fn log_watcher_thread(
                                             &mut pending_spells,
                                             &mut long_duration_spells,
                                             &encounters,
-                                            &encounter_counter
+                                            &encounter_counter,
+                                            &player_registry,
+                                            &buff_tracker,
+                                            &current_settings,
+                                            false  // is_historical = false for real-time processing
                                         );
                                         
                                         // Update the shared current_encounter_id when it changes

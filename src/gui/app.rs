@@ -1,8 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use eframe::egui;
-use crate::models::{Encounter, CombatantStats, ViewMode};
+use crate::models::{Encounter, CombatantStats, ViewMode, PlayerRegistry, AppSettings, BuffTracker, DamageViewMode, CombatantFilter};
 use crate::gui::helpers::compute_stats_hash;
+use crate::utils::{load_player_registry, auto_save_player_registry, load_app_settings, auto_save_app_settings};
 
 pub struct NwnLogApp {
     /// All encounters, indexed by encounter ID
@@ -25,10 +26,39 @@ pub struct NwnLogApp {
     pub cached_sorted_combatants: Vec<(String, CombatantStats)>,
     /// Hash of the current data to detect changes
     pub last_data_hash: u64,
+    /// Player registry for tracking known players
+    pub player_registry: Arc<Mutex<PlayerRegistry>>,
+    /// Application settings
+    pub settings: AppSettings,
+    /// Whether to show the options window
+    pub show_options: bool,
+    /// Buff tracker for divine spells
+    pub buff_tracker: Arc<Mutex<BuffTracker>>,
+    /// Whether the buff window has been spawned
+    pub buff_window_spawned: bool,
+    /// Shared settings for background thread access
+    pub settings_ref: Option<Arc<Mutex<AppSettings>>>,
+    /// Current damage view mode (done/taken)
+    pub damage_view_mode: DamageViewMode,
+    /// Current combatant filter (all/friendlies/enemies)
+    pub combatant_filter: CombatantFilter,
+    /// Open player detail windows
+    pub open_detail_windows: HashMap<String, bool>,
+    /// Last damage view mode to detect changes
+    pub last_damage_view_mode: DamageViewMode,
+    /// Last combatant filter to detect changes
+    pub last_combatant_filter: CombatantFilter,
+    /// Whether the first two button rows are minimized
+    pub rows_minimized: bool,
 }
 
 impl NwnLogApp {
     pub fn new() -> Self {
+        // Load player registry from file
+        let player_registry = load_player_registry();
+        // Load app settings from file
+        let settings = load_app_settings();
+
         Self {
             encounters: Arc::new(Mutex::new(HashMap::new())),
             current_encounter_id: Arc::new(Mutex::new(None)),
@@ -40,6 +70,18 @@ impl NwnLogApp {
             encounter_counter: Arc::new(Mutex::new(1)),
             cached_sorted_combatants: Vec::new(),
             last_data_hash: 0,
+            player_registry: Arc::new(Mutex::new(player_registry)),
+            settings,
+            show_options: false,
+            buff_tracker: Arc::new(Mutex::new(BuffTracker::new())),
+            buff_window_spawned: false,
+            settings_ref: None,
+            damage_view_mode: DamageViewMode::default(),
+            combatant_filter: CombatantFilter::default(),
+            open_detail_windows: HashMap::new(),
+            last_damage_view_mode: DamageViewMode::default(),
+            last_combatant_filter: CombatantFilter::default(),
+            rows_minimized: false,
         }
     }
 
@@ -273,21 +315,65 @@ impl NwnLogApp {
     
     pub fn update_sorted_cache(&mut self, stats_map: &HashMap<String, CombatantStats>) {
         let current_hash = compute_stats_hash(stats_map);
-        
-        // Only re-sort if the data has changed
-        if current_hash != self.last_data_hash {
-            self.cached_sorted_combatants = stats_map.iter()
+
+        // Check if data, filter, or view mode changed
+        let filter_changed = self.combatant_filter != self.last_combatant_filter;
+        let view_mode_changed = self.damage_view_mode != self.last_damage_view_mode;
+        let data_changed = current_hash != self.last_data_hash;
+
+        // Only re-sort if something has changed
+        if data_changed || filter_changed || view_mode_changed {
+            // Apply combatant filter
+            let filtered_stats: HashMap<String, CombatantStats> = stats_map.iter()
+                .filter(|(name, _stats)| {
+                    match self.combatant_filter {
+                        crate::models::CombatantFilter::All => true,
+                        crate::models::CombatantFilter::Friendlies => {
+                            // Check if this is a known player
+                            if let Ok(registry) = self.player_registry.lock() {
+                                registry.is_player(name)
+                            } else {
+                                false
+                            }
+                        },
+                        crate::models::CombatantFilter::Enemies => {
+                            // Check if this is NOT a known player
+                            if let Ok(registry) = self.player_registry.lock() {
+                                !registry.is_player(name)
+                            } else {
+                                true
+                            }
+                        }
+                    }
+                })
                 .map(|(name, stats)| (name.clone(), stats.clone()))
                 .collect();
-            
-            // Sort by: 1) total damage dealt (desc), 2) total damage received (desc), 3) name (asc)
-            self.cached_sorted_combatants.sort_by(|a, b| {
-                b.1.total_damage_dealt.cmp(&a.1.total_damage_dealt)
-                    .then(b.1.total_damage_received.cmp(&a.1.total_damage_received))
-                    .then(a.0.cmp(&b.0))
-            });
-            
+
+            self.cached_sorted_combatants = filtered_stats.iter()
+                .map(|(name, stats)| (name.clone(), stats.clone()))
+                .collect();
+
+            // Sort based on damage view mode
+            match self.damage_view_mode {
+                crate::models::DamageViewMode::DamageDone => {
+                    self.cached_sorted_combatants.sort_by(|a, b| {
+                        b.1.total_damage_dealt.cmp(&a.1.total_damage_dealt)
+                            .then(b.1.total_damage_received.cmp(&a.1.total_damage_received))
+                            .then(a.0.cmp(&b.0))
+                    });
+                },
+                crate::models::DamageViewMode::DamageTaken => {
+                    self.cached_sorted_combatants.sort_by(|a, b| {
+                        b.1.total_damage_received.cmp(&a.1.total_damage_received)
+                            .then(b.1.total_damage_dealt.cmp(&a.1.total_damage_dealt))
+                            .then(a.0.cmp(&b.0))
+                    });
+                }
+            }
+
             self.last_data_hash = current_hash;
+            self.last_combatant_filter = self.combatant_filter.clone();
+            self.last_damage_view_mode = self.damage_view_mode.clone();
         }
     }
 }

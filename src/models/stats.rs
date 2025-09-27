@@ -56,7 +56,20 @@ impl CombatantStats {
             None
         }
     }
-    
+
+    pub fn calculate_dtps(&self) -> Option<f64> {
+        if let (Some(first), Some(last)) = (self.first_action_time, self.last_action_time) {
+            let duration_secs = if last > first { last - first } else { 1 };
+            if duration_secs > 0 && self.total_damage_received > 0 {
+                Some(self.total_damage_received as f64 / duration_secs as f64)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
     pub fn calculate_source_dps(&self, damage_amount: u32) -> Option<f64> {
         // Use the same time window as total damage dealt DPS
         if let (Some(first), Some(last)) = (self.first_action_time, self.last_action_time) {

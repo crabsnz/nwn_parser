@@ -11,6 +11,10 @@ pub enum ParsedLine {
     Save { target: String, save_type: String, element: String, result: String, timestamp: u64 },
     Casting { caster: String, spell: String, timestamp: u64 },
     Casts { caster: String, spell: String, timestamp: u64 },
+    PlayerJoin { account_name: String, timestamp: u64 },
+    PlayerChat { account_name: String, character_name: String, chat_type: String, timestamp: u64 },
+    PartyChat { character_name: String, timestamp: u64 },
+    PartyJoin { character_name: String, timestamp: u64 },
 }
 
 pub fn is_long_duration_spell(spell: &str) -> bool {
@@ -38,8 +42,39 @@ pub fn parse_log_line(line: &str) -> Option<ParsedLine> {
     } else {
         get_current_timestamp() // Fallback to current time if no timestamp
     };
-    
+
     let clean_line = line.trim().strip_prefix("[CHAT WINDOW TEXT]").and_then(|s| s.splitn(2, ']').nth(1)).unwrap_or(line).trim();
+
+    // Check for player identification patterns first (these have higher priority)
+    if let Some(caps) = RE_PLAYER_JOIN.captures(clean_line) {
+        return Some(ParsedLine::PlayerJoin {
+            account_name: caps["account"].to_string(),
+            timestamp,
+        });
+    }
+
+    if let Some(caps) = RE_PLAYER_CHAT.captures(clean_line) {
+        return Some(ParsedLine::PlayerChat {
+            account_name: caps["account"].to_string(),
+            character_name: caps["character"].trim().to_string(),
+            chat_type: caps["chat_type"].to_string(),
+            timestamp,
+        });
+    }
+
+    if let Some(caps) = RE_PARTY_CHAT.captures(clean_line) {
+        return Some(ParsedLine::PartyChat {
+            character_name: caps["character"].trim().to_string(),
+            timestamp,
+        });
+    }
+
+    if let Some(caps) = RE_PARTY_JOIN.captures(clean_line) {
+        return Some(ParsedLine::PartyJoin {
+            character_name: caps["character"].trim().to_string(),
+            timestamp,
+        });
+    }
 
     if let Some(caps) = RE_SPELL_RESIST.captures(clean_line) {
         return Some(ParsedLine::SpellResist {

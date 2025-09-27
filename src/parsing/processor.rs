@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use crate::models::{Encounter, SpellContext, PendingAttack, PendingSpell, LongDurationSpell};
+use crate::models::{Encounter, SpellContext, PendingAttack, PendingSpell, LongDurationSpell, PlayerRegistry, BuffTracker, AppSettings};
 use crate::parsing::line_parser::{ParsedLine, is_long_duration_spell, get_spell_damage_type};
+use crate::utils::auto_save_player_registry;
 
 pub fn process_parsed_line(
     parsed: ParsedLine,
@@ -13,10 +14,132 @@ pub fn process_parsed_line(
     pending_spells: &mut Vec<PendingSpell>,
     long_duration_spells: &mut Vec<LongDurationSpell>,
     encounters: &Arc<Mutex<HashMap<u64, Encounter>>>,
-    encounter_counter: &Arc<Mutex<u64>>
+    encounter_counter: &Arc<Mutex<u64>>,
+    player_registry: &Arc<Mutex<PlayerRegistry>>,
+    buff_tracker: &Arc<Mutex<BuffTracker>>,
+    settings: &AppSettings,
+    is_historical: bool
 ) {
     const ENCOUNTER_TIMEOUT: u64 = 6;
-    
+
+    // Handle player identification events first (these don't start encounters)
+    match &parsed {
+        ParsedLine::PlayerJoin { account_name, .. } => {
+            if let Ok(mut registry) = player_registry.lock() {
+                println!("PlayerJoin detected: account '{}', current main_player_account: {:?}",
+                        account_name, registry.main_player_account);
+
+                // Check if this is a re-login of the main player
+                let is_re_login = registry.main_player_account.as_ref() == Some(account_name);
+                println!("Is re-login: {}", is_re_login);
+
+                if is_re_login {
+                    // Get character names before clearing
+                    let chars_before = if let Some(player) = registry.players.get(account_name) {
+                        player.character_names.clone()
+                    } else {
+                        Vec::new()
+                    };
+                    println!("Character names before clearing: {:?}", chars_before);
+
+                    // Clear character names for re-login
+                    registry.clear_character_names(account_name);
+
+                    // Clear all buffs since it's a new session
+                    if let Ok(mut tracker) = buff_tracker.lock() {
+                        let buffs_before = tracker.active_buffs.len();
+                        tracker.clear_all_buffs();
+                        let buffs_after = tracker.active_buffs.len();
+                        println!("Cleared {} buffs (had {}, now {})", buffs_before, buffs_before, buffs_after);
+                    }
+                    println!("Main player {} re-logged in - cleared character data and buffs", account_name);
+                } else {
+                    println!("Different player joined (not main player): {}", account_name);
+                }
+
+                registry.add_player_join(account_name.clone());
+                auto_save_player_registry(&registry);
+            }
+            return;
+        }
+        ParsedLine::PlayerChat { account_name, character_name, .. } => {
+            if let Ok(mut registry) = player_registry.lock() {
+                // Check if this is the main player account with a different character
+                if registry.main_player_account.as_ref() == Some(account_name) {
+                    // Get the current main character
+                    let current_main_character = registry.get_main_player_info().map(|(_, char)| char);
+
+                    println!("Main player chat detected: account '{}', character '{}', current main character: {:?}",
+                            account_name, character_name, current_main_character);
+
+                    // Check if this is a different character than the current one
+                    if let Some(current_char) = current_main_character {
+                        if current_char != *character_name {
+                            println!("Character switch detected! From '{}' to '{}'", current_char, character_name);
+
+                            // Clear all buffs since it's a character switch
+                            if let Ok(mut tracker) = buff_tracker.lock() {
+                                let buffs_before = tracker.active_buffs.len();
+                                tracker.clear_all_buffs();
+                                println!("Cleared {} buffs due to character switch", buffs_before);
+                            }
+
+                            // Clear character names and re-add the new one
+                            registry.clear_character_names(account_name);
+                            println!("Cleared previous character associations for main player");
+                        }
+                    } else {
+                        println!("First character detected for main player: '{}'", character_name);
+                    }
+                }
+
+                registry.add_character_name(account_name.clone(), character_name.clone());
+                auto_save_player_registry(&registry);
+                println!("Associated character '{}' with account '{}'", character_name, account_name);
+            }
+            return;
+        }
+        ParsedLine::PartyChat { character_name, .. } => {
+            if let Ok(mut registry) = player_registry.lock() {
+                // Check if this could be the main player's new character
+                if let Some(main_account) = registry.main_player_account.clone() {
+                    if let Some(player) = registry.players.get(&main_account) {
+                        if player.character_names.is_empty() {
+                            println!("Main player has no characters - assuming party chat from '{}' is main player", character_name);
+                            registry.add_character_name(main_account, character_name.clone());
+                            auto_save_player_registry(&registry);
+                            return;
+                        }
+                    }
+                }
+                registry.add_party_member(character_name.clone());
+                auto_save_player_registry(&registry);
+                println!("Detected player from party chat: {}", character_name);
+            }
+            return;
+        }
+        ParsedLine::PartyJoin { character_name, .. } => {
+            if let Ok(mut registry) = player_registry.lock() {
+                // Check if this could be the main player's new character
+                if let Some(main_account) = registry.main_player_account.clone() {
+                    if let Some(player) = registry.players.get(&main_account) {
+                        if player.character_names.is_empty() {
+                            println!("Main player has no characters - assuming party join from '{}' is main player", character_name);
+                            registry.add_character_name(main_account, character_name.clone());
+                            auto_save_player_registry(&registry);
+                            return;
+                        }
+                    }
+                }
+                registry.add_party_member(character_name.clone());
+                auto_save_player_registry(&registry);
+                println!("Detected player from party join: {}", character_name);
+            }
+            return;
+        }
+        _ => {} // Continue processing other events
+    }
+
     // Only consider damage > 0 events for encounter timeout calculations
     let should_update_combat_time = match &parsed {
         ParsedLine::Damage { total, .. } => *total > 0,
@@ -45,7 +168,8 @@ pub fn process_parsed_line(
         encounters.lock().unwrap().insert(new_id, new_encounter);
         *current_encounter = Some(new_id);
         spell_contexts.clear();
-        pending_attacks.clear();
+        // NOTE: Don't clear pending_attacks - attacks can span encounter boundaries
+        // pending_attacks.clear();
         pending_spells.clear();
         long_duration_spells.clear();
     }
@@ -61,8 +185,30 @@ pub fn process_parsed_line(
             encounter.end_time = combat_time;
             
             match parsed {
-                ParsedLine::Casting { .. } | ParsedLine::Casts { .. } => {
-                    // Ignore casting - only spell resist determines spell damage
+                ParsedLine::Casting { .. } => {
+                    // Ignore casting preparation - only track when spell is actually cast
+                }
+                ParsedLine::Casts { caster, spell, .. } => {
+                    // Check if this is a buff spell cast by the main player (only for real-time, not historical)
+                    if !is_historical {
+                        if let Ok(registry) = player_registry.lock() {
+                            // Check if caster is the main player character
+                            if let Some((_, main_character)) = registry.get_main_player_info() {
+                                if caster == main_character {
+                                    // Check if this spell is trackable (has a known duration)
+                                    if crate::models::BuffTracker::is_trackable_buff(&spell, settings) {
+                                        // Add buff to tracker
+                                        if let Ok(mut tracker) = buff_tracker.lock() {
+                                            println!("Adding buff: {} - Using settings: caster_level={}, cha_mod={}",
+                                                     spell, settings.caster_level, settings.charisma_modifier);
+                                            tracker.add_buff(spell.clone(), caster.clone(), settings);
+                                            println!("Tracking buff: {} cast by {}", spell, caster);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 ParsedLine::SpellResist { target, spell, .. } => {
                     // Clear existing pending spells since a new spell resist indicates previous spells didn't result in damage
@@ -169,6 +315,11 @@ pub fn process_parsed_line(
                 ParsedLine::Attack { attacker, target, result, concealment, timestamp } => {
                     // Clear pending spells when an attack roll happens
                     pending_spells.clear();
+
+                    // Clean up expired pending attacks (older than 3 seconds)
+                    pending_attacks.retain(|attack| {
+                        combat_time.saturating_sub(attack.timestamp) <= 3
+                    });
                     
                     let attacker_stats = encounter.stats.entry(attacker.clone()).or_default();
                     attacker_stats.update_action_time(timestamp);
@@ -199,12 +350,17 @@ pub fn process_parsed_line(
                         }
                         _ => {}
                     }
-                    encounter.stats.entry(target).or_default().times_attacked += 1;
+                    // Only create stats entries when damage is dealt, not just on attacks
                 }
                 ParsedLine::Damage { attacker, target, total, breakdown, timestamp } => {
                     // Clean up expired long-duration spells (older than 6 seconds)
                     long_duration_spells.retain(|spell| {
                         combat_time.saturating_sub(spell.timestamp) <= 6
+                    });
+
+                    // Clean up expired pending attacks (older than 3 seconds)
+                    pending_attacks.retain(|attack| {
+                        combat_time.saturating_sub(attack.timestamp) <= 3
                     });
                     
                     // STEP 1: Check if this damage matches any active long-duration spells
@@ -332,19 +488,42 @@ pub fn process_parsed_line(
                         }
                     };
                     
-                    // Handle attacker stats
+                    // Handle summon damage attribution - check if attacker contains " | " (summon pattern)
+                    let (actual_attacker, summon_name) = if let Some(pipe_pos) = attacker.find(" | ") {
+                        // This is a summon attack - attribute damage to the player before the pipe
+                        let player_name = attacker[..pipe_pos].trim().to_string();
+                        let summon_name = attacker[pipe_pos + 3..].trim().to_string();
+                        (player_name, Some(summon_name))
+                    } else {
+                        // Regular attacker
+                        (attacker.clone(), None)
+                    };
+
+                    // Modify damage source to include summon information
+                    let final_damage_source = if let Some(ref summon) = summon_name {
+                        if damage_source == "Attack" {
+                            format!("Attack ({})", summon)
+                        } else {
+                            format!("{} ({})", damage_source, summon)
+                        }
+                    } else {
+                        damage_source.clone()
+                    };
+
+                    // Handle attacker stats (use actual_attacker which is the player for summons)
                     {
-                        let attacker_stats = encounter.stats.entry(attacker.clone()).or_default();
+                        let attacker_stats = encounter.stats.entry(actual_attacker.clone()).or_default();
                         attacker_stats.update_action_time(timestamp);
                         attacker_stats.total_damage_dealt += total;
-                        *attacker_stats.damage_by_source_dealt.entry(damage_source.clone()).or_default() += total;
+
+                        *attacker_stats.damage_by_source_dealt.entry(final_damage_source.clone()).or_default() += total;
                         
                         // Track damage by target
                         *attacker_stats.damage_by_target_dealt.entry(target.clone()).or_default() += total;
                         *attacker_stats.damage_by_target_and_source_dealt
                             .entry(target.clone())
                             .or_default()
-                            .entry(damage_source.clone())
+                            .entry(final_damage_source.clone())
                             .or_default() += total;
                         
                         // Track damage by target, source, and type
@@ -352,7 +531,7 @@ pub fn process_parsed_line(
                             *attacker_stats.damage_by_target_source_and_type_dealt
                                 .entry(target.clone())
                                 .or_default()
-                                .entry(damage_source.clone())
+                                .entry(final_damage_source.clone())
                                 .or_default()
                                 .entry(damage_type.clone())
                                 .or_default() += amount;
@@ -401,7 +580,7 @@ pub fn process_parsed_line(
                             
                             // Track damage types per source
                             *attacker_stats.damage_by_source_and_type_dealt
-                                .entry(damage_source.clone())
+                                .entry(final_damage_source.clone())
                                 .or_default()
                                 .entry(damage_type.clone())
                                 .or_default() += amount;
@@ -414,16 +593,16 @@ pub fn process_parsed_line(
                         target_stats.update_action_time(timestamp);
                         target_stats.total_damage_received += total;
                         
-                        // Track damage source for received damage
-                        let received_source = format!("{} ({})", attacker, damage_source);
+                        // Track damage source for received damage (use final_damage_source which includes summon info if applicable)
+                        let received_source = format!("{} ({})", actual_attacker, final_damage_source);
                         *target_stats.damage_by_source_received.entry(received_source.clone()).or_default() += total;
                         
-                        // Track damage by attacker
-                        *target_stats.damage_by_attacker_received.entry(attacker.clone()).or_default() += total;
+                        // Track damage by attacker (use actual_attacker to properly attribute summon damage to player)
+                        *target_stats.damage_by_attacker_received.entry(actual_attacker.clone()).or_default() += total;
                         *target_stats.damage_by_attacker_and_source_received
-                            .entry(attacker.clone())
+                            .entry(actual_attacker.clone())
                             .or_default()
-                            .entry(damage_source.clone())
+                            .entry(final_damage_source.clone())
                             .or_default() += total;
                         
                         for (damage_type, &amount) in &breakdown {
@@ -456,6 +635,13 @@ pub fn process_parsed_line(
                             long_spell.had_damage_immunity = true;
                         }
                     }
+                }
+                // Player identification events are handled at the top of the function
+                ParsedLine::PlayerJoin { .. } |
+                ParsedLine::PlayerChat { .. } |
+                ParsedLine::PartyChat { .. } |
+                ParsedLine::PartyJoin { .. } => {
+                    // These are already handled at the start of the function
                 }
             }
         }

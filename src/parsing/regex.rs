@@ -11,4 +11,10 @@ lazy_static! {
     pub static ref RE_SAVE: Regex = Regex::new(r"^SAVE: (?P<target>.+?) : (?P<save_type>.+?) vs\. (?P<element>.+?) : \*(?P<result>failed|succeeded)\*").unwrap();
     pub static ref RE_CASTING: Regex = Regex::new(r"^(?P<caster>.+?) casting (?P<spell>.+)").unwrap();
     pub static ref RE_CASTS: Regex = Regex::new(r"^(?P<caster>.+?) casts (?P<spell>.+)").unwrap();
+
+    // Player identification regexes
+    pub static ref RE_PLAYER_JOIN: Regex = Regex::new(r"^(?P<account>\w+) has joined as a player\.\.").unwrap();
+    pub static ref RE_PLAYER_CHAT: Regex = Regex::new(r"^\[(?P<account>\w+)\] (?P<character>[^:]+): \[(?P<chat_type>[^\]]+)\]").unwrap();
+    pub static ref RE_PARTY_CHAT: Regex = Regex::new(r"^(?P<character>[^:]+) : \[Party\]").unwrap();
+    pub static ref RE_PARTY_JOIN: Regex = Regex::new(r"^(?P<character>.+?) has joined the party\.").unwrap();
 }
