@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 use eframe::egui;
 use crate::models::{CombatantStats, ViewMode};
 use crate::gui::app::NwnLogApp;
@@ -493,9 +492,11 @@ impl eframe::App for NwnLogApp {
 
         // Show independent buff window if requested
         if self.buff_window_spawned {
-            crate::gui::show_buff_window(ctx, self.buff_tracker.clone(),
-                self.settings_ref.clone().unwrap_or_else(|| Arc::new(Mutex::new(self.settings.clone()))),
-                &mut self.buff_window_spawned);
+            if let Some(settings_ref) = &self.settings_ref {
+                crate::gui::show_buff_window(ctx, self.buff_tracker.clone(),
+                    settings_ref.clone(),
+                    &mut self.buff_window_spawned);
+            }
         }
 
         // Show player detail windows
@@ -543,20 +544,28 @@ impl NwnLogApp {
                 // Caster Level setting
                 ui.horizontal(|ui| {
                     ui.label("Caster Level:");
-                    let mut caster_level = self.settings.caster_level;
-                    if ui.add(egui::DragValue::new(&mut caster_level).range(1..=40).speed(1.0)).changed() {
-                        self.settings.set_caster_level(caster_level);
-                        auto_save_app_settings(&self.settings);
+                    if let Some(settings_ref) = &self.settings_ref {
+                        if let Ok(mut settings) = settings_ref.lock() {
+                            let mut caster_level = settings.caster_level;
+                            if ui.add(egui::DragValue::new(&mut caster_level).range(1..=40).speed(1.0)).changed() {
+                                settings.set_caster_level(caster_level);
+                                auto_save_app_settings(&*settings);
+                            }
+                        }
                     }
                 });
 
                 // Charisma Modifier setting
                 ui.horizontal(|ui| {
                     ui.label("CHA Modifier:");
-                    let mut cha_mod = self.settings.charisma_modifier;
-                    if ui.add(egui::DragValue::new(&mut cha_mod).range(-10..=50).speed(1.0)).changed() {
-                        self.settings.set_charisma_modifier(cha_mod);
-                        auto_save_app_settings(&self.settings);
+                    if let Some(settings_ref) = &self.settings_ref {
+                        if let Ok(mut settings) = settings_ref.lock() {
+                            let mut cha_mod = settings.charisma_modifier;
+                            if ui.add(egui::DragValue::new(&mut cha_mod).range(-10..=50).speed(1.0)).changed() {
+                                settings.set_charisma_modifier(cha_mod);
+                                auto_save_app_settings(&*settings);
+                            }
+                        }
                     }
                 });
 
@@ -565,17 +574,25 @@ impl NwnLogApp {
                 ui.separator();
 
                 // Extended Divine Might toggle
-                let mut extended_divine_might = self.settings.extended_divine_might;
-                if ui.checkbox(&mut extended_divine_might, "Extended Divine Might").changed() {
-                    self.settings.extended_divine_might = extended_divine_might;
-                    auto_save_app_settings(&self.settings);
+                if let Some(settings_ref) = &self.settings_ref {
+                    if let Ok(mut settings) = settings_ref.lock() {
+                        let mut extended_divine_might = settings.extended_divine_might;
+                        if ui.checkbox(&mut extended_divine_might, "Extended Divine Might").changed() {
+                            settings.extended_divine_might = extended_divine_might;
+                            auto_save_app_settings(&*settings);
+                        }
+                    }
                 }
 
                 // Extended Divine Shield toggle
-                let mut extended_divine_shield = self.settings.extended_divine_shield;
-                if ui.checkbox(&mut extended_divine_shield, "Extended Divine Shield").changed() {
-                    self.settings.extended_divine_shield = extended_divine_shield;
-                    auto_save_app_settings(&self.settings);
+                if let Some(settings_ref) = &self.settings_ref {
+                    if let Ok(mut settings) = settings_ref.lock() {
+                        let mut extended_divine_shield = settings.extended_divine_shield;
+                        if ui.checkbox(&mut extended_divine_shield, "Extended Divine Shield").changed() {
+                            settings.extended_divine_shield = extended_divine_shield;
+                            auto_save_app_settings(&*settings);
+                        }
+                    }
                 }
 
                 ui.add_space(10.0);
@@ -583,10 +600,14 @@ impl NwnLogApp {
 
                 // Buff Warning Time setting
                 ui.label("Buff Warning Time (seconds):");
-                let mut warning_seconds = self.settings.buff_warning_seconds as i32;
-                if ui.add(egui::Slider::new(&mut warning_seconds, 1..=30).text("seconds")).changed() {
-                    self.settings.set_buff_warning_seconds(warning_seconds as u32);
-                    auto_save_app_settings(&self.settings);
+                if let Some(settings_ref) = &self.settings_ref {
+                    if let Ok(mut settings) = settings_ref.lock() {
+                        let mut warning_seconds = settings.buff_warning_seconds as i32;
+                        if ui.add(egui::Slider::new(&mut warning_seconds, 1..=30).text("seconds")).changed() {
+                            settings.set_buff_warning_seconds(warning_seconds as u32);
+                            auto_save_app_settings(&*settings);
+                        }
+                    }
                 }
 
                 // Display current settings info

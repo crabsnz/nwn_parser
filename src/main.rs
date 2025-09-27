@@ -29,7 +29,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut app = NwnLogApp::new();
     let player_registry = app.player_registry.clone();
     let buff_tracker = app.buff_tracker.clone();
-    let settings = Arc::new(Mutex::new(app.settings.clone()));
+    let settings = app.settings_ref.clone().unwrap();
 
     let encounters_clone = encounters.clone();
     let current_encounter_clone = current_encounter_id.clone();
@@ -59,7 +59,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     app.encounters = encounters;
     app.current_encounter_id = current_encounter_id;
     app.encounter_counter = encounter_counter;
-    app.settings_ref = Some(settings);
     
     eframe::run_native(
         "NWN Log Overlay",

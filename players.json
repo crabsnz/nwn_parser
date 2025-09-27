@@ -1,47 +1,162 @@
 {
   "players": {
-    "Torvok": {
-      "account_name": "Torvok",
+    "Matronmalis": {
+      "account_name": "Matronmalis",
+      "character_names": []
+    },
+    "player_--XeL--": {
+      "account_name": "player_--XeL--",
       "character_names": [
-        "Sister Trina"
+        "--XeL--"
       ]
     },
-    "Malark": {
-      "account_name": "Malark",
+    "Kiaranshalee": {
+      "account_name": "Kiaranshalee",
       "character_names": []
     },
-    "Ioggi": {
-      "account_name": "Ioggi",
-      "character_names": []
-    },
-    "Druido890": {
-      "account_name": "Druido890",
-      "character_names": []
-    },
-    "BertBert": {
-      "account_name": "BertBert",
-      "character_names": []
-    },
-    "player_Massy Mystical Minion": {
-      "account_name": "player_Massy Mystical Minion",
-      "character_names": [
-        "Massy Mystical Minion"
-      ]
-    },
-    "Noobtastic": {
-      "account_name": "Noobtastic",
+    "cshdw7": {
+      "account_name": "cshdw7",
       "character_names": []
     },
     "Theran": {
       "account_name": "Theran",
       "character_names": []
     },
+    "Torvok": {
+      "account_name": "Torvok",
+      "character_names": [
+        "Sister Trina"
+      ]
+    },
+    "Bobman": {
+      "account_name": "Bobman",
+      "character_names": []
+    },
+    "MassyM": {
+      "account_name": "MassyM",
+      "character_names": [
+        "Massy  Tepes",
+        "Massy Mystical Minion"
+      ]
+    },
+    "Ludwig": {
+      "account_name": "Ludwig",
+      "character_names": []
+    },
+    "Druido890": {
+      "account_name": "Druido890",
+      "character_names": []
+    },
     "JackasFTW": {
       "account_name": "JackasFTW",
       "character_names": []
     },
-    "Bobman": {
-      "account_name": "Bobman",
+    "xel": {
+      "account_name": "xel",
+      "character_names": [
+        "--XeL--"
+      ]
+    },
+    "Kane0": {
+      "account_name": "Kane0",
+      "character_names": []
+    },
+    "Malark": {
+      "account_name": "Malark",
+      "character_names": []
+    },
+    "Mystogan": {
+      "account_name": "Mystogan",
+      "character_names": []
+    },
+    "Zercman": {
+      "account_name": "Zercman",
+      "character_names": [
+        "Dank V2"
+      ]
+    },
+    "Hardeck": {
+      "account_name": "Hardeck",
+      "character_names": []
+    },
+    "player_Alicia": {
+      "account_name": "player_Alicia",
+      "character_names": [
+        "Alicia"
+      ]
+    },
+    "ragestorm": {
+      "account_name": "ragestorm",
+      "character_names": []
+    },
+    "Noobtastic": {
+      "account_name": "Noobtastic",
+      "character_names": []
+    },
+    "Shargast": {
+      "account_name": "Shargast",
+      "character_names": []
+    },
+    "rad112g": {
+      "account_name": "rad112g",
+      "character_names": []
+    },
+    "blitz183": {
+      "account_name": "blitz183",
+      "character_names": []
+    },
+    "Dedwengles": {
+      "account_name": "Dedwengles",
+      "character_names": []
+    },
+    "Darkness": {
+      "account_name": "Darkness",
+      "character_names": []
+    },
+    "Obs": {
+      "account_name": "Obs",
+      "character_names": []
+    },
+    "vovinia": {
+      "account_name": "vovinia",
+      "character_names": [
+        "Hel"
+      ]
+    },
+    "Ginnelwen": {
+      "account_name": "Ginnelwen",
+      "character_names": [
+        "Isilra Moonarrow"
+      ]
+    },
+    "Giadanbe": {
+      "account_name": "Giadanbe",
+      "character_names": []
+    },
+    "BertBert": {
+      "account_name": "BertBert",
+      "character_names": []
+    },
+    "Willynilly": {
+      "account_name": "Willynilly",
+      "character_names": [
+        "SSD Willy"
+      ]
+    },
+    "Avalon": {
+      "account_name": "Avalon",
+      "character_names": []
+    },
+    "Jeku": {
+      "account_name": "Jeku",
+      "character_names": []
+    },
+    "Fuddio": {
+      "account_name": "Fuddio",
+      "character_names": []
+    },
+    "dandd": {
+      "account_name": "dandd",
       "character_names": []
     },
     "Kalistez": {
@@ -52,114 +167,12 @@
       "account_name": "yumei",
       "character_names": []
     },
-    "ragestorm": {
-      "account_name": "ragestorm",
-      "character_names": []
-    },
-    "Giadanbe": {
-      "account_name": "Giadanbe",
-      "character_names": []
-    },
-    "dandd": {
-      "account_name": "dandd",
-      "character_names": []
-    },
-    "Ketsuki": {
-      "account_name": "Ketsuki",
-      "character_names": []
-    },
-    "Willynilly": {
-      "account_name": "Willynilly",
-      "character_names": [
-        "SSD Willy"
-      ]
-    },
-    "player_Alicia": {
-      "account_name": "player_Alicia",
-      "character_names": [
-        "Alicia"
-      ]
-    },
-    "Iwan": {
-      "account_name": "Iwan",
-      "character_names": []
-    },
-    "nwnyuan": {
-      "account_name": "nwnyuan",
-      "character_names": []
-    },
-    "player_Crystal": {
-      "account_name": "player_Crystal",
-      "character_names": [
-        "Crystal"
-      ]
-    },
-    "Darkness": {
-      "account_name": "Darkness",
-      "character_names": []
-    },
-    "Zorknog": {
-      "account_name": "Zorknog",
-      "character_names": []
-    },
-    "Mystogan": {
-      "account_name": "Mystogan",
-      "character_names": []
-    },
-    "Obs": {
-      "account_name": "Obs",
-      "character_names": []
-    },
-    "Bejelith": {
-      "account_name": "Bejelith",
-      "character_names": []
-    },
-    "Matronmalis": {
-      "account_name": "Matronmalis",
-      "character_names": []
-    },
-    "Kane0": {
-      "account_name": "Kane0",
-      "character_names": []
-    },
-    "blitz183": {
-      "account_name": "blitz183",
-      "character_names": []
-    },
     "Im0th3b": {
       "account_name": "Im0th3b",
       "character_names": []
     },
-    "AlastarScott": {
-      "account_name": "AlastarScott",
-      "character_names": []
-    },
-    "Morpherio": {
-      "account_name": "Morpherio",
-      "character_names": []
-    },
-    "corwinjino": {
-      "account_name": "corwinjino",
-      "character_names": [
-        "Unkind Jino"
-      ]
-    },
-    "player_Sister Trina": {
-      "account_name": "player_Sister Trina",
-      "character_names": [
-        "Sister Trina"
-      ]
-    },
-    "Jeku": {
-      "account_name": "Jeku",
-      "character_names": []
-    },
-    "Shargast": {
-      "account_name": "Shargast",
-      "character_names": []
-    },
-    "Koil": {
-      "account_name": "Koil",
+    "Iwan": {
+      "account_name": "Iwan",
       "character_names": []
     },
     "FBerntsson": {
@@ -169,74 +182,27 @@
         "Alicia"
       ]
     },
-    "Dragadoth": {
-      "account_name": "Dragadoth",
+    "nwnyuan": {
+      "account_name": "nwnyuan",
       "character_names": []
     },
-    "Hardeck": {
-      "account_name": "Hardeck",
+    "Morpherio": {
+      "account_name": "Morpherio",
       "character_names": []
     },
-    "player_--XeL--": {
-      "account_name": "player_--XeL--",
-      "character_names": [
-        "--XeL--"
-      ]
+    "Bejelith": {
+      "account_name": "Bejelith",
+      "character_names": []
     },
     "Bookhermit": {
       "account_name": "Bookhermit",
       "character_names": []
     },
-    "Zercman": {
-      "account_name": "Zercman",
+    "player_Crystal": {
+      "account_name": "player_Crystal",
       "character_names": [
-        "zzzzTEST death v2"
+        "Crystal"
       ]
-    },
-    "rad112g": {
-      "account_name": "rad112g",
-      "character_names": []
-    },
-    "Avalon": {
-      "account_name": "Avalon",
-      "character_names": []
-    },
-    "Kiaranshalee": {
-      "account_name": "Kiaranshalee",
-      "character_names": []
-    },
-    "Ludwig": {
-      "account_name": "Ludwig",
-      "character_names": []
-    },
-    "Dedwengles": {
-      "account_name": "Dedwengles",
-      "character_names": []
-    },
-    "cshdw7": {
-      "account_name": "cshdw7",
-      "character_names": []
-    },
-    "xel": {
-      "account_name": "xel",
-      "character_names": [
-        "--XeL--"
-      ]
-    },
-    "Fuddio": {
-      "account_name": "Fuddio",
-      "character_names": []
-    },
-    "MassyM": {
-      "account_name": "MassyM",
-      "character_names": [
-        "Massy  Tepes",
-        "Massy Mystical Minion"
-      ]
-    },
-    "vovinia": {
-      "account_name": "vovinia",
-      "character_names": []
     },
     "Justin": {
       "account_name": "Justin",
@@ -245,18 +211,62 @@
     "Ragnarocknroll": {
       "account_name": "Ragnarocknroll",
       "character_names": []
+    },
+    "AlastarScott": {
+      "account_name": "AlastarScott",
+      "character_names": []
+    },
+    "player_Massy Mystical Minion": {
+      "account_name": "player_Massy Mystical Minion",
+      "character_names": [
+        "Massy Mystical Minion"
+      ]
+    },
+    "Ketsuki": {
+      "account_name": "Ketsuki",
+      "character_names": []
+    },
+    "Zorknog": {
+      "account_name": "Zorknog",
+      "character_names": []
+    },
+    "Ioggi": {
+      "account_name": "Ioggi",
+      "character_names": []
+    },
+    "Koil": {
+      "account_name": "Koil",
+      "character_names": []
+    },
+    "Dragadoth": {
+      "account_name": "Dragadoth",
+      "character_names": []
+    },
+    "player_Sister Trina": {
+      "account_name": "player_Sister Trina",
+      "character_names": [
+        "Sister Trina"
+      ]
+    },
+    "corwinjino": {
+      "account_name": "corwinjino",
+      "character_names": [
+        "Unkind Jino"
+      ]
     }
   },
   "character_to_account": {
     "Alicia": "FBerntsson",
-    "Crystal": "FBerntsson",
-    "Unkind Jino": "corwinjino",
-    "--XeL--": "xel",
-    "Massy Mystical Minion": "MassyM",
     "SSD Willy": "Willynilly",
+    "Dank V2": "Zercman",
+    "--XeL--": "xel",
     "Sister Trina": "Torvok",
-    "zzzzTEST death v2": "Zercman",
-    "Massy  Tepes": "MassyM"
+    "Massy Mystical Minion": "MassyM",
+    "Unkind Jino": "corwinjino",
+    "Massy  Tepes": "MassyM",
+    "Isilra Moonarrow": "Ginnelwen",
+    "Crystal": "FBerntsson",
+    "Hel": "vovinia"
   },
   "main_player_account": "Zercman"
 }

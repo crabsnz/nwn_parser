@@ -28,8 +28,6 @@ pub struct NwnLogApp {
     pub last_data_hash: u64,
     /// Player registry for tracking known players
     pub player_registry: Arc<Mutex<PlayerRegistry>>,
-    /// Application settings
-    pub settings: AppSettings,
     /// Whether to show the options window
     pub show_options: bool,
     /// Buff tracker for divine spells
@@ -71,11 +69,10 @@ impl NwnLogApp {
             cached_sorted_combatants: Vec::new(),
             last_data_hash: 0,
             player_registry: Arc::new(Mutex::new(player_registry)),
-            settings,
             show_options: false,
             buff_tracker: Arc::new(Mutex::new(BuffTracker::new())),
             buff_window_spawned: false,
-            settings_ref: None,
+            settings_ref: Some(Arc::new(Mutex::new(settings))),
             damage_view_mode: DamageViewMode::default(),
             combatant_filter: CombatantFilter::default(),
             open_detail_windows: HashMap::new(),
