@@ -58,16 +58,13 @@ pub fn find_latest_log_file() -> Option<PathBuf> {
 
 pub fn get_onedrive_logs_path() -> PathBuf {
     let mut path = PathBuf::new();
-    if let Ok(home) = std::env::var("USERPROFILE") {
-        path.push(home);
-    } else {
-        path.push("C:\\Users");
-        if let Ok(username) = std::env::var("USERNAME") {
-            path.push(username);
-        } else {
-            path.push("Default");
-        }
-    }
+    let home = std::env::var("USERPROFILE").unwrap_or_else(|_| {
+        std::env::var("USERNAME")
+            .map(|username| format!("C:\\Users\\{}", username))
+            .unwrap_or_else(|_| "C:\\Users\\Default".to_string())
+    });
+
+    path.push(home);
     path.push("OneDrive");
     path.push("Documents");
     path.push("Neverwinter Nights");
@@ -77,16 +74,13 @@ pub fn get_onedrive_logs_path() -> PathBuf {
 
 pub fn get_regular_logs_path() -> PathBuf {
     let mut path = PathBuf::new();
-    if let Ok(home) = std::env::var("USERPROFILE") {
-        path.push(home);
-    } else {
-        path.push("C:\\Users");
-        if let Ok(username) = std::env::var("USERNAME") {
-            path.push(username);
-        } else {
-            path.push("Default");
-        }
-    }
+    let home = std::env::var("USERPROFILE").unwrap_or_else(|_| {
+        std::env::var("USERNAME")
+            .map(|username| format!("C:\\Users\\{}", username))
+            .unwrap_or_else(|_| "C:\\Users\\Default".to_string())
+    });
+
+    path.push(home);
     path.push("Documents");
     path.push("Neverwinter Nights");
     path.push("logs");
@@ -95,16 +89,13 @@ pub fn get_regular_logs_path() -> PathBuf {
 
 pub fn get_unix_logs_path() -> PathBuf {
     let mut path = PathBuf::new();
-    if let Ok(home) = std::env::var("HOME") {
-        path.push(home);
-    } else {
-        path.push("/home");
-        if let Ok(user) = std::env::var("USER") {
-            path.push(user);
-        } else {
-            path.push("default");
-        }
-    }
+    let home = std::env::var("HOME").unwrap_or_else(|_| {
+        std::env::var("USER")
+            .map(|user| format!("/home/{}", user))
+            .unwrap_or_else(|_| "/home/default".to_string())
+    });
+
+    path.push(home);
     path.push(".local");
     path.push("share");
     path.push("Neverwinter Nights");
@@ -114,16 +105,13 @@ pub fn get_unix_logs_path() -> PathBuf {
 
 pub fn get_unix_documents_logs_path() -> PathBuf {
     let mut path = PathBuf::new();
-    if let Ok(home) = std::env::var("HOME") {
-        path.push(home);
-    } else {
-        path.push("/home");
-        if let Ok(user) = std::env::var("USER") {
-            path.push(user);
-        } else {
-            path.push("default");
-        }
-    }
+    let home = std::env::var("HOME").unwrap_or_else(|_| {
+        std::env::var("USER")
+            .map(|user| format!("/home/{}", user))
+            .unwrap_or_else(|_| "/home/default".to_string())
+    });
+
+    path.push(home);
     path.push("Documents");
     path.push("Neverwinter Nights");
     path.push("logs");
