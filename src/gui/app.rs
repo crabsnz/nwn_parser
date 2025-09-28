@@ -1,9 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
-use eframe::egui;
 use crate::models::{Encounter, CombatantStats, ViewMode, PlayerRegistry, AppSettings, BuffTracker, DamageViewMode, CombatantFilter};
 use crate::gui::helpers::compute_stats_hash;
-use crate::utils::{load_player_registry, auto_save_player_registry, load_app_settings, auto_save_app_settings};
+use crate::utils::{load_player_registry, load_app_settings};
 
 pub struct NwnLogApp {
     /// All encounters, indexed by encounter ID
@@ -14,10 +13,6 @@ pub struct NwnLogApp {
     pub selected_encounter_ids: HashSet<u64>,
     /// Current view mode: individual encounters or combined view
     pub view_mode: ViewMode,
-    /// Track if we're in resize mode
-    pub is_resizing: bool,
-    /// Minimum window size
-    pub min_size: egui::Vec2,
     /// Text scaling factor
     pub text_scale: f32,
     /// Encounter counter
@@ -62,8 +57,6 @@ impl NwnLogApp {
             current_encounter_id: Arc::new(Mutex::new(None)),
             selected_encounter_ids: HashSet::new(),
             view_mode: ViewMode::CurrentFight,
-            is_resizing: false,
-            min_size: egui::Vec2::new(300.0, 250.0),
             text_scale: 1.0,
             encounter_counter: Arc::new(Mutex::new(1)),
             cached_sorted_combatants: Vec::new(),

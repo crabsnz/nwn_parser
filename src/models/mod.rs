@@ -33,6 +33,6 @@ impl Default for CombatantFilter {
         CombatantFilter::All
     }
 }
-pub use player::{PlayerData, PlayerRegistry};
+pub use player::PlayerRegistry;
 pub use settings::AppSettings;
-pub use buffs::{ActiveBuff, BuffTracker};
+pub use buffs::BuffTracker;

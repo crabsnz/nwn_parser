@@ -133,7 +133,7 @@ pub fn log_watcher_thread(
                 let current_settings = if let Ok(settings_guard) = settings.lock() {
                     settings_guard.clone()
                 } else {
-                    AppSettings::new()
+                    AppSettings::default()
                 };
 
                 match process_full_log_file(&latest_log_path, encounters.clone(), current_encounter_id.clone(), encounter_counter.clone(), player_registry.clone(), buff_tracker.clone(), &current_settings) {
@@ -187,7 +187,7 @@ pub fn log_watcher_thread(
                                         let current_settings = if let Ok(settings_guard) = settings.lock() {
                                             settings_guard.clone()
                                         } else {
-                                            AppSettings::new()
+                                            AppSettings::default()
                                         };
 
                                         // Use the centralized processing function

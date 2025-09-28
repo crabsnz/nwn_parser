@@ -69,10 +69,6 @@ impl PlayerRegistry {
         self.character_to_account.contains_key(name)
     }
 
-    pub fn get_account_for_character(&self, character_name: &str) -> Option<&String> {
-        self.character_to_account.get(character_name)
-    }
-
     pub fn get_main_player_info(&self) -> Option<(String, String)> {
         if let Some(account) = &self.main_player_account {
             if let Some(player) = self.players.get(account) {

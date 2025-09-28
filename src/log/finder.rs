@@ -56,13 +56,17 @@ pub fn find_latest_log_file() -> Option<PathBuf> {
     }
 }
 
+fn get_home                                                                                                                                                                            _path(env_var: &str, fallback_env: &str, fallback_path: &str) -> String {
+    std::env::var(env_var).unwrap_or_else(|_| {
+        std::env::var(fallback_env)
+            .map(|user| format!("{}/{}", fallback_path, user))
+            .unwrap_or_else(|_| format!("{}/default", fallback_path))
+    })
+}
+
 pub fn get_onedrive_logs_path() -> PathBuf {
     let mut path = PathBuf::new();
-    let home = std::env::var("USERPROFILE").unwrap_or_else(|_| {
-        std::env::var("USERNAME")
-            .map(|username| format!("C:\\Users\\{}", username))
-            .unwrap_or_else(|_| "C:\\Users\\Default".to_string())
-    });
+    let home = get_home_path("USERPROFILE", "USERNAME", "C:\\Users");
 
     path.push(home);
     path.push("OneDrive");
@@ -74,11 +78,7 @@ pub fn get_onedrive_logs_path() -> PathBuf {
 
 pub fn get_regular_logs_path() -> PathBuf {
     let mut path = PathBuf::new();
-    let home = std::env::var("USERPROFILE").unwrap_or_else(|_| {
-        std::env::var("USERNAME")
-            .map(|username| format!("C:\\Users\\{}", username))
-            .unwrap_or_else(|_| "C:\\Users\\Default".to_string())
-    });
+    let home = get_home_path("USERPROFILE", "USERNAME", "C:\\Users");
 
     path.push(home);
     path.push("Documents");
@@ -89,11 +89,7 @@ pub fn get_regular_logs_path() -> PathBuf {
 
 pub fn get_unix_logs_path() -> PathBuf {
     let mut path = PathBuf::new();
-    let home = std::env::var("HOME").unwrap_or_else(|_| {
-        std::env::var("USER")
-            .map(|user| format!("/home/{}", user))
-            .unwrap_or_else(|_| "/home/default".to_string())
-    });
+    let home = get_home_path("HOME", "USER", "/home");
 
     path.push(home);
     path.push(".local");
@@ -105,11 +101,7 @@ pub fn get_unix_logs_path() -> PathBuf {
 
 pub fn get_unix_documents_logs_path() -> PathBuf {
     let mut path = PathBuf::new();
-    let home = std::env::var("HOME").unwrap_or_else(|_| {
-        std::env::var("USER")
-            .map(|user| format!("/home/{}", user))
-            .unwrap_or_else(|_| "/home/default".to_string())
-    });
+    let home = get_home_path("HOME", "USER", "/home");
 
     path.push(home);
     path.push("Documents");

@@ -5,52 +5,6 @@ use crate::gui::app::NwnLogApp;
 use crate::utils::auto_save_app_settings;
 
 impl NwnLogApp {
-    /// Helper function to create a custom collapsible header with full click area
-    pub fn custom_collapsing_header(
-        &self, 
-        ui: &mut egui::Ui, 
-        id: egui::Id, 
-        text: &str,
-        content: impl FnOnce(&mut egui::Ui)
-    ) {
-        let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false);
-        
-        // Calculate header height and width
-        let header_height = 20.0;
-        let available_width = ui.available_width();
-        let header_rect = ui.allocate_space(egui::Vec2::new(available_width, header_height)).1;
-        
-        // Create clickable header
-        let header_response = ui.allocate_rect(header_rect, egui::Sense::click());
-        
-        // Draw header content (non-interactive)
-        let text_painter = ui.painter();
-        
-        // Draw collapsing arrow
-        let arrow_text = if state.is_open() { "▼" } else { "▶" };
-        let arrow_pos = egui::Pos2::new(header_rect.min.x + 8.0, header_rect.center().y);
-        text_painter.text(arrow_pos, egui::Align2::LEFT_CENTER, arrow_text, egui::FontId::default(), ui.visuals().text_color());
-        
-        // Draw header text
-        let text_pos = egui::Pos2::new(header_rect.min.x + 25.0, header_rect.center().y);
-        text_painter.text(text_pos, egui::Align2::LEFT_CENTER, text, 
-            egui::FontId::proportional(13.0), ui.visuals().text_color());
-        
-        // Handle click
-        if header_response.clicked() {
-            state.toggle(ui);
-        }
-        
-        state.store(ui.ctx());
-        
-        // Show content if expanded
-        if state.is_open() {
-            ui.indent(id, |ui| {
-                content(ui);
-            });
-        }
-    }
-
     pub fn display_stats(&mut self, ui: &mut egui::Ui, stats_map: &HashMap<String, CombatantStats>) {
         // Update cache only if data changed
         self.update_sorted_cache(stats_map);
@@ -623,15 +577,4 @@ impl NwnLogApp {
 
     // Buff window is now handled as an independent application - no embedded window needed
 
-    /// Keep window background opaque and visible.
-    fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
-        // Use egui's panel background color for consistent appearance across platforms
-        let color = visuals.panel_fill;
-        [
-            color.r() as f32 / 255.0,
-            color.g() as f32 / 255.0, 
-            color.b() as f32 / 255.0,
-            color.a() as f32 / 255.0
-        ]
-    }
 }

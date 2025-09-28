@@ -16,8 +16,6 @@ mod utils;
 // Re-exports for convenience
 use gui::NwnLogApp;
 use log::log_watcher_thread;
-use models::PlayerRegistry;
-use utils::load_player_registry;
 
 fn main() -> Result<(), Box<dyn Error>> {
     // Set up the shared state for encounters

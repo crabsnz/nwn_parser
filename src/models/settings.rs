@@ -27,10 +27,6 @@ impl Default for AppSettings {
 }
 
 impl AppSettings {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     /// Clamps caster level to valid range (1-40)
     pub fn set_caster_level(&mut self, level: i32) {
         self.caster_level = level.clamp(1, 40);

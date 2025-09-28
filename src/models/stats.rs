@@ -70,20 +70,6 @@ impl CombatantStats {
         }
     }
 
-    pub fn calculate_source_dps(&self, damage_amount: u32) -> Option<f64> {
-        // Use the same time window as total damage dealt DPS
-        if let (Some(first), Some(last)) = (self.first_action_time, self.last_action_time) {
-            let duration_secs = if last > first { last - first } else { 1 };
-            if duration_secs > 0 && damage_amount > 0 {
-                Some(damage_amount as f64 / duration_secs as f64)
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    }
-    
     pub fn update_action_time(&mut self, timestamp: u64) {
         if self.first_action_time.is_none() {
             self.first_action_time = Some(timestamp);

@@ -14,7 +14,7 @@ pub fn load_app_settings() -> AppSettings {
 
     if !file_path.exists() {
         println!("No existing settings found, using defaults");
-        return AppSettings::new();
+        return AppSettings::default();
     }
 
     match fs::read_to_string(&file_path) {
@@ -28,13 +28,13 @@ pub fn load_app_settings() -> AppSettings {
                 }
                 Err(e) => {
                     eprintln!("Error parsing settings JSON: {}. Using defaults.", e);
-                    AppSettings::new()
+                    AppSettings::default()
                 }
             }
         }
         Err(e) => {
             eprintln!("Error reading settings file: {}. Using defaults.", e);
-            AppSettings::new()
+            AppSettings::default()
         }
     }
 }
