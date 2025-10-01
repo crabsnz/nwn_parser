@@ -22,14 +22,27 @@ fn main() -> Result<(), Box<dyn Error>> {
     let encounters = Arc::new(Mutex::new(HashMap::new()));
     let current_encounter_id = Arc::new(Mutex::new(None));
     let encounter_counter = Arc::new(Mutex::new(1));
-    
+
+    // Create the application state to get shared references
+    let mut app = NwnLogApp::new();
+    let player_registry = app.player_registry.clone();
+    let buff_tracker = app.buff_tracker.clone();
+    let settings = app.settings_ref.clone().unwrap();
+    let log_reload_requested = app.log_reload_requested.clone();
+    let logs_state = app.logs_window_state.recent_logs.clone();
+
     let encounters_clone = encounters.clone();
     let current_encounter_clone = current_encounter_id.clone();
     let counter_clone = encounter_counter.clone();
+    let registry_clone = player_registry.clone();
+    let buff_tracker_clone = buff_tracker.clone();
+    let settings_clone = settings.clone();
+    let reload_requested_clone = log_reload_requested.clone();
+    let logs_state_clone = logs_state.clone();
 
     // Spawn the background thread for log watching.
     thread::spawn(move || {
-        log_watcher_thread(encounters_clone, current_encounter_clone, counter_clone);
+        log_watcher_thread(encounters_clone, current_encounter_clone, counter_clone, registry_clone, buff_tracker_clone, settings_clone, reload_requested_clone, logs_state_clone);
     });
 
     // Configure the native window options for a borderless, custom GUI.
@@ -44,8 +57,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         ..Default::default()
     };
     
-    // Create the application state.
-    let mut app = NwnLogApp::new();
+    // Update the app with the shared state
     app.encounters = encounters;
     app.current_encounter_id = current_encounter_id;
     app.encounter_counter = encounter_counter;
