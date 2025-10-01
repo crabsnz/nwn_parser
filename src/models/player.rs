@@ -35,6 +35,13 @@ impl PlayerRegistry {
     }
 
     pub fn add_character_name(&mut self, account_name: String, character_name: String) {
+        // Clean up any temporary "player_" account for this character
+        let temp_account = format!("player_{}", character_name);
+        if temp_account != account_name && self.players.contains_key(&temp_account) {
+            self.players.remove(&temp_account);
+            println!("Cleaned up temporary account '{}' for character '{}'", temp_account, character_name);
+        }
+
         // Ensure player exists
         if !self.players.contains_key(&account_name) {
             self.players.insert(account_name.clone(), PlayerData {
@@ -96,6 +103,29 @@ impl PlayerRegistry {
             }
             // Clear the character names list
             player.character_names.clear();
+        }
+    }
+
+    pub fn cleanup_temporary_accounts(&mut self) {
+        // Find all temporary accounts that start with "player_"
+        let temp_accounts: Vec<String> = self.players.keys()
+            .filter(|account| account.starts_with("player_"))
+            .cloned()
+            .collect();
+
+        for temp_account in temp_accounts {
+            // Get the character name (remove "player_" prefix)
+            let character_name = temp_account.strip_prefix("player_").unwrap();
+
+            // Check if we now have a real account for this character
+            if let Some(real_account) = self.character_to_account.get(character_name) {
+                if real_account != &temp_account {
+                    // We have a real account, so remove the temporary one
+                    self.players.remove(&temp_account);
+                    println!("Cleaned up temporary account '{}' - character '{}' is now under account '{}'",
+                             temp_account, character_name, real_account);
+                }
+            }
         }
     }
 }

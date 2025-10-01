@@ -20,8 +20,11 @@ pub fn load_player_registry() -> PlayerRegistry {
     match fs::read_to_string(&file_path) {
         Ok(content) => {
             match serde_json::from_str::<PlayerRegistry>(&content) {
-                Ok(registry) => {
+                Ok(mut registry) => {
                     println!("Loaded player registry with {} players", registry.players.len());
+                    registry.cleanup_temporary_accounts();
+                    // Save the cleaned up registry
+                    let _ = save_player_registry(&registry);
                     registry
                 }
                 Err(e) => {

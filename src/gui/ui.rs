@@ -3,6 +3,7 @@ use eframe::egui;
 use crate::models::{CombatantStats, ViewMode};
 use crate::gui::app::NwnLogApp;
 use crate::utils::auto_save_app_settings;
+use crate::log::finder::get_default_log_directory;
 
 impl NwnLogApp {
     pub fn display_stats(&mut self, ui: &mut egui::Ui, stats_map: &HashMap<String, CombatantStats>) {
@@ -141,7 +142,7 @@ impl eframe::App for NwnLogApp {
         ctx.request_repaint();
         egui::CentralPanel::default().show(ctx, |ui| {
             // Prevent the UI from auto-sizing by setting a minimum size
-            ui.set_min_size(egui::Vec2::new(300.0, 200.0));
+            ui.set_min_size(egui::Vec2::new(400.0, 200.0));
             
             // Custom header bar
             let header_rect = ui.allocate_space(egui::Vec2::new(ui.available_width(), 35.0)).1;
@@ -162,7 +163,7 @@ impl eframe::App for NwnLogApp {
                     // Left-aligned title (draggable area) - draw as non-interactive text
                     let title_pos = egui::Pos2::new(header_rect.min.x + 15.0, header_rect.center().y);
 
-                    // Get the title - show just username if available, otherwise default
+                    // Get the title - show player info if available, otherwise prompt to chat
                     let title = if let Ok(registry) = self.player_registry.lock() {
                         if let Some((account, character)) = registry.get_main_player_info() {
                             format!("[{}] {}", account, character)
@@ -171,11 +172,11 @@ impl eframe::App for NwnLogApp {
                             if let Some(account) = &registry.main_player_account {
                                 format!("[{}]", account)
                             } else {
-                                "NWN Combat Tracker".to_string()
+                                "Type in chat to activate buffs".to_string()
                             }
                         }
                     } else {
-                        "NWN Combat Tracker".to_string()
+                        "Type in chat to activate buffs".to_string()
                     };
 
                     ui.painter().text(title_pos, egui::Align2::LEFT_CENTER, title,
@@ -245,12 +246,12 @@ impl eframe::App for NwnLogApp {
                 let showing_encounters = !self.selected_encounter_ids.is_empty();
                 let showing_current_fight = self.selected_encounter_ids.is_empty() && self.view_mode == ViewMode::CurrentFight;
                 let showing_overall_stats = self.selected_encounter_ids.is_empty() && self.view_mode == ViewMode::OverallStats;
-                
-                if ui.add_sized([100.0, 20.0], egui::Button::new("Current Fight").selected(showing_current_fight)).clicked() {
+
+                if ui.add_sized([60.0, 20.0], egui::Button::new("Current").selected(showing_current_fight)).clicked() {
                     self.view_mode = ViewMode::CurrentFight;
                     self.selected_encounter_ids.clear(); // Clear encounter selections when switching to Current Fight
                 }
-                if ui.add_sized([100.0, 20.0], egui::Button::new("Overall Stats").selected(showing_overall_stats)).clicked() {
+                if ui.add_sized([60.0, 20.0], egui::Button::new("Overall").selected(showing_overall_stats)).clicked() {
                     self.view_mode = ViewMode::OverallStats;
                     self.selected_encounter_ids.clear(); // Clear encounter selections when switching to Overall Stats
                 }
@@ -259,7 +260,7 @@ impl eframe::App for NwnLogApp {
                 } else {
                     "Encounters".to_string()
                 };
-                if ui.add_sized([120.0, 20.0], egui::Button::new(encounters_button_text).selected(showing_encounters || self.view_mode == ViewMode::MultipleSelected)).clicked() {
+                if ui.add_sized([100.0, 20.0], egui::Button::new(encounters_button_text).selected(showing_encounters || self.view_mode == ViewMode::MultipleSelected)).clicked() {
                     if self.view_mode == ViewMode::MultipleSelected {
                         // If already in multi-select mode, close the selection UI but keep showing the data
                         self.view_mode = ViewMode::CurrentFight; // This will be overridden by get_current_stats if encounters are selected
@@ -270,8 +271,13 @@ impl eframe::App for NwnLogApp {
                 }
 
                 // Buffs button
-                if ui.add_sized([80.0, 20.0], egui::Button::new("Buffs").selected(self.buff_window_spawned)).clicked() {
+                if ui.add_sized([55.0, 20.0], egui::Button::new("Buffs").selected(self.buff_window_spawned)).clicked() {
                     self.buff_window_spawned = !self.buff_window_spawned;
+                }
+
+                // Logs button
+                if ui.add_sized([55.0, 20.0], egui::Button::new("Logs").selected(self.logs_window_open)).clicked() {
+                    self.logs_window_open = !self.logs_window_open;
                 }
             });
 
@@ -379,65 +385,70 @@ impl eframe::App for NwnLogApp {
             if let Some(stats_map) = stats_to_display {
                 self.display_stats(ui, &stats_map);
             }
+        }); // End CentralPanel
 
-            // Render resize grip after the content to ensure it's always on top
-            let window_rect = ui.max_rect();
-            let grip_size = 10.0;
+        // Render resize grip OUTSIDE the panel to ensure it's truly on top
+        let window_rect = ctx.screen_rect();
+        let grip_size = 15.0; // Slightly larger for easier grabbing
 
-            // Bottom-right corner resize grip only
-            let grip_rect = egui::Rect::from_min_size(
-                egui::Pos2::new(window_rect.max.x - grip_size, window_rect.max.y - grip_size),
-                egui::Vec2::new(grip_size, grip_size)
-            );
+        // Bottom-right corner resize grip only
+        let grip_rect = egui::Rect::from_min_size(
+            egui::Pos2::new(window_rect.max.x - grip_size, window_rect.max.y - grip_size),
+            egui::Vec2::new(grip_size, grip_size)
+        );
 
-            // Use interact instead of allocate_rect for better behavior
-            let grip_id = egui::Id::new("resize_grip");
-            let grip_response = ui.interact(grip_rect, grip_id, egui::Sense::click_and_drag());
+        // Create a top-layer area for the resize grip to ensure it's above everything
+        egui::Area::new(egui::Id::new("resize_grip_area"))
+            .fixed_pos(grip_rect.min)
+            .interactable(true)
+            .show(ctx, |ui| {
+                let grip_id = egui::Id::new("resize_grip");
+                let grip_response = ui.interact(grip_rect, grip_id, egui::Sense::click_and_drag());
 
-            if grip_response.hovered() {
-                ctx.set_cursor_icon(egui::CursorIcon::ResizeSouthEast);
-            }
-
-            if grip_response.dragged() {
-                let delta = grip_response.drag_delta();
-                if delta.length() > 0.1 { // More sensitive to small movements
-                    // Get current window size more reliably
-                    let current_size = ctx.input(|i| {
-                        if let Some(rect) = i.viewport().inner_rect {
-                            rect.size()
-                        } else {
-                            // Fallback to screen rect size
-                            i.screen_rect().size()
-                        }
-                    });
-
-                    let new_width = (current_size.x + delta.x).clamp(300.0, 1600.0);
-                    let new_height = (current_size.y + delta.y).clamp(200.0, 1200.0);
-
-                    // Send the resize command
-                    ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::Vec2::new(new_width, new_height)));
-
-                    // Force a repaint to make the resize more responsive
-                    ctx.request_repaint();
+                if grip_response.hovered() {
+                    ctx.set_cursor_icon(egui::CursorIcon::ResizeSouthEast);
                 }
-            }
 
-            // Draw resize grip indicator
-            let grip_color = if grip_response.hovered() {
-                egui::Color32::from_gray(150)
-            } else {
-                egui::Color32::from_gray(100)
-            };
+                if grip_response.dragged() {
+                    let delta = grip_response.drag_delta();
+                    if delta.length() > 0.1 { // More sensitive to small movements
+                        // Get current window size more reliably
+                        let current_size = ctx.input(|i| {
+                            if let Some(rect) = i.viewport().inner_rect {
+                                rect.size()
+                            } else {
+                                // Fallback to screen rect size
+                                i.screen_rect().size()
+                            }
+                        });
 
-            // Draw resize grip lines
-            let painter = ui.painter();
-            for i in 0..3 {
-                let offset = i as f32 * 2.5;
-                let start = egui::Pos2::new(grip_rect.max.x - 1.0 - offset, grip_rect.min.y + offset + 1.0);
-                let end = egui::Pos2::new(grip_rect.min.x + offset + 1.0, grip_rect.max.y - 1.0 - offset);
-                painter.line_segment([start, end], egui::Stroke::new(1.0, grip_color));
-            }
-        });
+                        let new_width = (current_size.x + delta.x).clamp(300.0, 1600.0);
+                        let new_height = (current_size.y + delta.y).clamp(200.0, 1200.0);
+
+                        // Send the resize command
+                        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::Vec2::new(new_width, new_height)));
+
+                        // Force a repaint to make the resize more responsive
+                        ctx.request_repaint();
+                    }
+                }
+
+                // Draw resize grip indicator
+                let grip_color = if grip_response.hovered() {
+                    egui::Color32::from_gray(150)
+                } else {
+                    egui::Color32::from_gray(100)
+                };
+
+                // Draw resize grip lines
+                let painter = ui.painter();
+                for i in 0..3 {
+                    let offset = i as f32 * 3.0;
+                    let start = egui::Pos2::new(grip_rect.max.x - 2.0 - offset, grip_rect.min.y + offset + 2.0);
+                    let end = egui::Pos2::new(grip_rect.min.x + offset + 2.0, grip_rect.max.y - 2.0 - offset);
+                    painter.line_segment([start, end], egui::Stroke::new(1.5, grip_color));
+                }
+            });
 
         // Show options window if requested
         if self.show_options {
@@ -450,6 +461,15 @@ impl eframe::App for NwnLogApp {
                 crate::gui::show_buff_window(ctx, self.buff_tracker.clone(),
                     settings_ref.clone(),
                     &mut self.buff_window_spawned);
+            }
+        }
+
+        // Show logs window if requested
+        if self.logs_window_open {
+            if let Some(settings_ref) = &self.settings_ref {
+                crate::gui::show_logs_window(ctx, &mut self.logs_window_state,
+                    settings_ref.clone(),
+                    &mut self.logs_window_open);
             }
         }
 
@@ -562,6 +582,98 @@ impl NwnLogApp {
                             auto_save_app_settings(&*settings);
                         }
                     }
+                }
+
+                ui.add_space(10.0);
+                ui.heading("Log Directory");
+                ui.separator();
+
+                // Log Directory setting
+                ui.horizontal(|ui| {
+                    ui.label("Log Directory:");
+                    if let Some(settings_ref) = &self.settings_ref {
+                        if let Ok(settings) = settings_ref.lock() {
+                            // Use pending directory if available, otherwise current setting
+                            let mut log_dir_text = self.pending_log_directory.clone()
+                                .or_else(|| settings.log_directory.clone())
+                                .unwrap_or_default();
+
+                            let text_edit = ui.text_edit_singleline(&mut log_dir_text);
+
+                            if text_edit.changed() {
+                                // Store as pending, don't save yet
+                                self.pending_log_directory = if log_dir_text.trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(log_dir_text)
+                                };
+                                self.show_log_dir_confirm = true;
+                            }
+
+                            // Show confirmation buttons if there's a pending change
+                            if self.show_log_dir_confirm {
+                                ui.separator();
+
+                                // Confirm button (green checkmark)
+                                if ui.button("✓ Confirm").clicked() {
+                                    // Clear all existing data immediately
+                                    if let Ok(mut encounters) = self.encounters.lock() {
+                                        encounters.clear();
+                                    }
+                                    if let Ok(mut current_id) = self.current_encounter_id.lock() {
+                                        *current_id = None;
+                                    }
+                                    if let Ok(mut counter) = self.encounter_counter.lock() {
+                                        *counter = 1;
+                                    }
+
+                                    // Apply the pending change
+                                    drop(settings); // Release the lock
+                                    if let Ok(mut settings) = settings_ref.lock() {
+                                        settings.log_directory = self.pending_log_directory.clone();
+                                        auto_save_app_settings(&*settings);
+                                    }
+
+                                    // Signal log reload
+                                    if let Ok(mut reload_flag) = self.log_reload_requested.lock() {
+                                        *reload_flag = true;
+                                    }
+
+                                    // Clear pending state
+                                    self.pending_log_directory = None;
+                                    self.show_log_dir_confirm = false;
+                                }
+
+                                // Cancel button (red X)
+                                if ui.button("✗ Cancel").clicked() {
+                                    // Revert pending change
+                                    self.pending_log_directory = None;
+                                    self.show_log_dir_confirm = false;
+                                }
+                            } else {
+                                // Reset to auto-detection button (only when not in confirm mode and not already default)
+                                let current_dir = settings.log_directory.as_ref();
+                                let default_dir = get_default_log_directory();
+
+                                // Only show button if current setting differs from auto-detected default
+                                if current_dir != default_dir.as_ref() {
+                                    if ui.button("Reset to Auto").clicked() {
+                                        if let Some(default_dir) = default_dir {
+                                            self.pending_log_directory = Some(default_dir);
+                                            self.show_log_dir_confirm = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+
+                // Show current auto-detected path as help text
+                if let Some(default_dir) = get_default_log_directory() {
+                    ui.small(format!("Auto-detected: {}", default_dir));
+                } else {
+                    ui.small("No log directory auto-detected");
                 }
 
                 // Display current settings info

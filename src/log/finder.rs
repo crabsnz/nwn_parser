@@ -15,6 +15,17 @@ pub fn find_latest_log_file_in_dir(dir: &Path) -> Option<PathBuf> {
 }
 
 pub fn find_latest_log_file() -> Option<PathBuf> {
+    find_latest_log_file_with_custom_dir(None)
+}
+
+pub fn find_latest_log_file_with_custom_dir(custom_dir: Option<&str>) -> Option<PathBuf> {
+    // If a custom directory is specified, only check that location
+    if let Some(custom_path) = custom_dir {
+        let custom_pathbuf = PathBuf::from(custom_path);
+        return find_latest_log_file_in_dir(&custom_pathbuf);
+    }
+
+    // Otherwise use the existing auto-detection logic
     if cfg!(windows) {
         // Try OneDrive path first
         let onedrive_path = get_onedrive_logs_path();
@@ -56,7 +67,38 @@ pub fn find_latest_log_file() -> Option<PathBuf> {
     }
 }
 
-fn get_home                                                                                                                                                                            _path(env_var: &str, fallback_env: &str, fallback_path: &str) -> String {
+pub fn get_default_log_directory() -> Option<String> {
+    if cfg!(windows) {
+        // Try OneDrive path first
+        let onedrive_path = get_onedrive_logs_path();
+        if onedrive_path.exists() {
+            return onedrive_path.to_string_lossy().to_string().into();
+        }
+
+        // Try regular Documents path
+        let regular_path = get_regular_logs_path();
+        if regular_path.exists() {
+            return regular_path.to_string_lossy().to_string().into();
+        }
+
+        None
+    } else {
+        // Unix-like systems: check both locations and return the first existing one
+        let local_path = get_unix_logs_path();
+        if local_path.exists() {
+            return local_path.to_string_lossy().to_string().into();
+        }
+
+        let documents_path = get_unix_documents_logs_path();
+        if documents_path.exists() {
+            return documents_path.to_string_lossy().to_string().into();
+        }
+
+        None
+    }
+}
+
+fn get_home_path(env_var: &str, fallback_env: &str, fallback_path: &str) -> String {
     std::env::var(env_var).unwrap_or_else(|_| {
         std::env::var(fallback_env)
             .map(|user| format!("{}/{}", fallback_path, user))

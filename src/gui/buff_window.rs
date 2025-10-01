@@ -32,70 +32,53 @@ pub fn show_buff_window(
                     } else {
                         format!("{}: {}s", buff.name, seconds)
                     };
-                    time_text.len() as f32 * 6.8  // Slightly tighter character width
+                    time_text.len() as f32 * 8.0  // More generous character width for font size 16
                 })
                 .fold(0.0f32, |a, b| a.max(b));
 
-            let width = (max_width + 15.0).clamp(120.0, 300.0);  // Smaller min/max
-            let height = buff_count as f32 * 16.0 + 15.0;        // Tighter line height
+            let width = (max_width + 30.0).clamp(150.0, 400.0);  // More padding and larger range
+            let height = buff_count as f32 * 20.0 + 20.0;        // More generous line height for font size 16
             (width, height)
         }
     } else {
         (200.0, 60.0)  // Default if can't access tracker
     };
 
+    // Get saved position from settings
+    let initial_pos = if let Ok(settings_guard) = settings.lock() {
+        settings_guard.buff_window_pos
+    } else {
+        None
+    };
+
+    let mut viewport_builder = egui::ViewportBuilder::default()
+        .with_inner_size([window_width, window_height])  // No space needed for title bar
+        .with_always_on_top()
+        .with_resizable(false)  // Make non-resizable for clean auto-sizing
+        .with_decorations(false);  // Remove system decorations
+
+    // Set initial position if available
+    if let Some((x, y)) = initial_pos {
+        viewport_builder = viewport_builder.with_position([x, y]);
+    }
+
     ctx.show_viewport_immediate(
-        egui::ViewportId::from_hash_of("buff_window"),
-        egui::ViewportBuilder::default()
-            .with_inner_size([window_width, window_height + 35.0])  // Add space for custom title bar
-            .with_always_on_top()
-            .with_resizable(false)  // Make non-resizable for clean auto-sizing
-            .with_decorations(false),  // Remove system decorations for custom title bar
+        egui::ViewportId::from_hash_of("buffs"),
+        viewport_builder,
         |ctx, class| {
             assert!(class == egui::ViewportClass::Immediate);
             ctx.set_visuals(egui::Visuals::dark());
 
             egui::CentralPanel::default().show(ctx, |ui| {
-                // Custom header bar (like main window)
-                let header_rect = ui.allocate_space(egui::Vec2::new(ui.available_width(), 35.0)).1;
-
-                // Make the header draggable except for the X button area
-                let draggable_rect = egui::Rect::from_min_size(
-                    header_rect.min,
-                    egui::Vec2::new(header_rect.width() - 30.0, header_rect.height()) // Leave space for X button
-                );
-                let drag_response = ui.allocate_rect(draggable_rect, egui::Sense::click_and_drag());
-                if drag_response.drag_started() {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
-                }
-
-                // Draw the header content
-                ui.scope_builder(egui::UiBuilder::new().max_rect(header_rect), |ui| {
-                    ui.horizontal(|ui| {
-                        // Draw "Buffs" title on the left
-                        let title_pos = egui::Pos2::new(header_rect.min.x + 15.0, header_rect.center().y);
-                        ui.painter().text(title_pos, egui::Align2::LEFT_CENTER, "Buffs",
-                            egui::FontId::proportional(16.0), ui.visuals().text_color());
-
-                        // Push X button to the right
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            // Close button (X)
-                            if ui.add(egui::Button::new(egui::RichText::new("X").size(12.0))
-                                .min_size(egui::Vec2::new(25.0, 25.0))).clicked() {
-                                *is_open = false;
-                            }
-                        });
-                    });
-                });
-
-                // Separator line between header and content
-                ui.add_space(2.0);
-                ui.separator();
-                ui.add_space(2.0);
-
                 // Remove default margins and spacing for compact layout
                 ui.spacing_mut().item_spacing = egui::Vec2::new(0.0, 2.0);
                 ui.spacing_mut().indent = 0.0;
+
+                // Make the window draggable by detecting drag on the UI background
+                let ui_response = ui.interact(ui.max_rect(), egui::Id::new("buff_window_drag"), egui::Sense::click_and_drag());
+                if ui_response.drag_started() {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                }
 
                 // Remove expired buffs first
                 if let Ok(mut tracker) = buff_tracker.lock() {
@@ -131,21 +114,39 @@ pub fn show_buff_window(
                                         ((100.0 * (1.0 - flash_intensity)) as u8 + 50).min(255),
                                         50
                                     );
-                                    ui.colored_label(flash_color, time_text);
+                                    ui.add(egui::Label::new(egui::RichText::new(time_text).size(16.0).color(flash_color)).selectable(false));
                                     // Request repaint for animation
                                     ui.ctx().request_repaint();
                                 } else {
-                                    ui.label(time_text);
+                                    ui.add(egui::Label::new(egui::RichText::new(time_text).size(16.0)).selectable(false));
                                 }
                             }
                         }
                     } else {
                         ui.centered_and_justified(|ui| {
-                            ui.label("No buffs");  // Shorter text
+                            ui.add(egui::Label::new(egui::RichText::new("No buffs").size(16.0)).selectable(false));
                         });
                     }
                 } else {
-                    ui.label("Unable to access buff tracker");
+                    ui.add(egui::Label::new(egui::RichText::new("Unable to access buff tracker").size(16.0)).selectable(false));
+                }
+
+                // Save window position if it changed
+                if let Some(outer_rect) = ctx.input(|i| i.viewport().outer_rect) {
+                    let current_pos = (outer_rect.min.x, outer_rect.min.y);
+                    if let Ok(mut settings_guard) = settings.lock() {
+                        if settings_guard.buff_window_pos != Some(current_pos) {
+                            settings_guard.buff_window_pos = Some(current_pos);
+                            // Auto-save settings
+                            drop(settings_guard);
+                            let settings_to_save = if let Ok(guard) = settings.lock() {
+                                guard.clone()
+                            } else {
+                                return;
+                            };
+                            crate::utils::settings_persistence::auto_save_app_settings(&settings_to_save);
+                        }
+                    }
                 }
             });
         },

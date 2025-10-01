@@ -2,6 +2,15 @@
 name = "nwn_parser"
 version = "0.1.0"
 edition = "2024"
+default-run = "nwn_parser"
+
+[lib]
+name = "nwn_parser"
+path = "src/lib.rs"
+
+[[bin]]
+name = "nwn_parser"
+path = "src/main.rs"
 
 [dependencies]
 eframe = "0.32.0"

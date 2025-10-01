@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use crate::models::{Encounter, CombatantStats, ViewMode, PlayerRegistry, AppSettings, BuffTracker, DamageViewMode, CombatantFilter};
 use crate::gui::helpers::compute_stats_hash;
+use crate::gui::logs_window::LogsWindowState;
 use crate::utils::{load_player_registry, load_app_settings};
 
 pub struct NwnLogApp {
@@ -43,6 +44,16 @@ pub struct NwnLogApp {
     pub last_combatant_filter: CombatantFilter,
     /// Whether the first two button rows are minimized
     pub rows_minimized: bool,
+    /// Pending log directory change (before confirmation)
+    pub pending_log_directory: Option<String>,
+    /// Whether to show confirmation for log directory change
+    pub show_log_dir_confirm: bool,
+    /// Signal to reload logs from new directory
+    pub log_reload_requested: Arc<Mutex<bool>>,
+    /// Logs window state
+    pub logs_window_state: LogsWindowState,
+    /// Whether the logs window is open
+    pub logs_window_open: bool,
 }
 
 impl NwnLogApp {
@@ -72,6 +83,11 @@ impl NwnLogApp {
             last_damage_view_mode: DamageViewMode::default(),
             last_combatant_filter: CombatantFilter::default(),
             rows_minimized: false,
+            pending_log_directory: None,
+            show_log_dir_confirm: false,
+            log_reload_requested: Arc::new(Mutex::new(false)),
+            logs_window_state: LogsWindowState::default(),
+            logs_window_open: false,
         }
     }
 
@@ -365,5 +381,53 @@ impl NwnLogApp {
             self.last_combatant_filter = self.combatant_filter.clone();
             self.last_damage_view_mode = self.damage_view_mode.clone();
         }
+    }
+
+    /// Format damage stats for copying to clipboard
+    pub fn format_damage_for_copy(&self) -> String {
+        use crate::models::DamageViewMode;
+
+        let header = match self.damage_view_mode {
+            DamageViewMode::DamageDone => " Damage Done ",
+            DamageViewMode::DamageTaken => " Damage Taken ",
+        };
+
+        let mut lines = vec![header.to_string()];
+
+        // Calculate total damage for percentage
+        let total_damage: u32 = self.cached_sorted_combatants.iter()
+            .map(|(_, s)| match self.damage_view_mode {
+                DamageViewMode::DamageDone => s.total_damage_dealt,
+                DamageViewMode::DamageTaken => s.total_damage_received,
+            }).sum();
+
+        // Find max damage value to determine alignment width
+        let max_damage: u32 = self.cached_sorted_combatants.iter()
+            .map(|(_, s)| match self.damage_view_mode {
+                DamageViewMode::DamageDone => s.total_damage_dealt,
+                DamageViewMode::DamageTaken => s.total_damage_received,
+            }).max().unwrap_or(0);
+
+        let damage_width = max_damage.to_string().len().max(4); // At least 4 chars
+
+        for (name, stats) in &self.cached_sorted_combatants {
+            let damage = match self.damage_view_mode {
+                DamageViewMode::DamageDone => stats.total_damage_dealt,
+                DamageViewMode::DamageTaken => stats.total_damage_received,
+            };
+
+            let dps = stats.calculate_dps().map(|d| d.round() as u32).unwrap_or(0);
+            let percentage = if total_damage > 0 && damage > 0 {
+                (damage as f32 / total_damage as f32 * 100.0).round() as u32
+            } else {
+                0
+            };
+
+            // Format with right-aligned damage value
+            lines.push(format!("{:<16} {:>width$} ({}, {}%)",
+                name, damage, dps, percentage, width = damage_width));
+        }
+
+        lines.join("\n")
     }
 }

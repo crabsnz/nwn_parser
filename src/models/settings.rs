@@ -12,6 +12,10 @@ pub struct AppSettings {
     pub extended_divine_shield: bool,
     /// Warning time for expiring buffs in seconds (1-30)
     pub buff_warning_seconds: u32,
+    /// Custom log directory path (None for auto-detection)
+    pub log_directory: Option<String>,
+    /// Buff window position (x, y)
+    pub buff_window_pos: Option<(f32, f32)>,
 }
 
 impl Default for AppSettings {
@@ -22,6 +26,8 @@ impl Default for AppSettings {
             extended_divine_might: false,
             extended_divine_shield: false,
             buff_warning_seconds: 10,
+            log_directory: None,
+            buff_window_pos: None,
         }
     }
 }

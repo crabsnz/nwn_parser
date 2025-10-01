@@ -137,6 +137,24 @@ pub fn process_parsed_line(
             }
             return;
         }
+        ParsedLine::Resting { .. } => {
+            // Clear all buffs when resting is detected
+            if let Ok(mut tracker) = buff_tracker.lock() {
+                let buffs_before = tracker.active_buffs.len();
+                tracker.clear_all_buffs();
+                println!("Cleared {} buffs due to resting", buffs_before);
+            }
+            return;
+        }
+        ParsedLine::BuffExpired { spell_name, .. } => {
+            // Remove specific buff when it expires
+            if let Ok(mut tracker) = buff_tracker.lock() {
+                if tracker.remove_buff(spell_name) {
+                    println!("Removed expired buff: {}", spell_name);
+                }
+            }
+            return;
+        }
         _ => {} // Continue processing other events
     }
 
@@ -442,10 +460,15 @@ pub fn process_parsed_line(
                         } else {
                             match (oldest_spell, oldest_attack) {
                                 (Some((spell_idx, spell)), Some((attack_idx, attack_timestamp))) => {
-                                    // Both spell and attack found - prioritize spell with save roll or damage immunity, otherwise use timestamp
-                                    if spell.had_save_roll || spell.had_damage_immunity || spell.timestamp <= attack_timestamp {
+                                    // Both spell and attack found
+                                    // Only classify as Attack if damage includes Physical
+                                    let should_use_spell = spell.had_save_roll || spell.had_damage_immunity
+                                        || spell.timestamp <= attack_timestamp
+                                        || !breakdown.contains_key("Physical"); // No Physical = not an attack
+
+                                    if should_use_spell {
                                         let pending_spell = pending_spells.remove(spell_idx);
-                                        
+
                                         // Update spell context caster if it was unknown
                                         if pending_spell.caster == "Unknown Caster" {
                                             for ctx in spell_contexts.iter_mut() {
@@ -476,9 +499,14 @@ pub fn process_parsed_line(
                                     (format!("Spell: {}", pending_spell.spell), false, false)
                                 },
                                 (None, Some((attack_idx, _))) => {
-                                    // Only attack found
-                                    let attack = pending_attacks.remove(attack_idx);
-                                    ("Attack".to_string(), attack.is_crit, false)
+                                    // Only attack found - but only classify as Attack if damage includes Physical
+                                    if breakdown.contains_key("Physical") {
+                                        let attack = pending_attacks.remove(attack_idx);
+                                        ("Attack".to_string(), attack.is_crit, false)
+                                    } else {
+                                        // No Physical damage, classify as Unknown (don't consume attack)
+                                        ("Unknown".to_string(), false, false)
+                                    }
                                 },
                                 (None, None) => {
                                     // Neither found
@@ -621,14 +649,14 @@ pub fn process_parsed_line(
                     target_stats.update_action_time(timestamp);
                     target_stats.total_damage_absorbed += amount;
                     *target_stats.absorbed_by_type.entry(dtype.clone()).or_default() += amount;
-                    
+
                     // Mark any pending spells for this target as having damage immunity absorption
                     for pending_spell in pending_spells.iter_mut() {
                         if pending_spell.target == target {
                             pending_spell.had_damage_immunity = true;
                         }
                     }
-                    
+
                     // Mark any long-duration spells for this target as having damage immunity absorption
                     for long_spell in long_duration_spells.iter_mut() {
                         if long_spell.target == target {
@@ -636,11 +664,53 @@ pub fn process_parsed_line(
                         }
                     }
                 }
-                // Player identification events are handled at the top of the function
+                ParsedLine::AbsorbResistance { target, amount, timestamp } => {
+                    let target_stats = encounter.stats.entry(target.clone()).or_default();
+                    target_stats.update_action_time(timestamp);
+                    target_stats.total_damage_absorbed += amount;
+                    *target_stats.absorbed_by_type.entry("Resistance".to_string()).or_default() += amount;
+
+                    // Mark any pending spells for this target as having damage immunity absorption
+                    for pending_spell in pending_spells.iter_mut() {
+                        if pending_spell.target == target {
+                            pending_spell.had_damage_immunity = true;
+                        }
+                    }
+
+                    // Mark any long-duration spells for this target as having damage immunity absorption
+                    for long_spell in long_duration_spells.iter_mut() {
+                        if long_spell.target == target {
+                            long_spell.had_damage_immunity = true;
+                        }
+                    }
+                }
+                ParsedLine::AbsorbReduction { target, amount, timestamp } => {
+                    let target_stats = encounter.stats.entry(target.clone()).or_default();
+                    target_stats.update_action_time(timestamp);
+                    target_stats.total_damage_absorbed += amount;
+                    *target_stats.absorbed_by_type.entry("Reduction".to_string()).or_default() += amount;
+
+                    // Mark any pending spells for this target as having damage immunity absorption
+                    for pending_spell in pending_spells.iter_mut() {
+                        if pending_spell.target == target {
+                            pending_spell.had_damage_immunity = true;
+                        }
+                    }
+
+                    // Mark any long-duration spells for this target as having damage immunity absorption
+                    for long_spell in long_duration_spells.iter_mut() {
+                        if long_spell.target == target {
+                            long_spell.had_damage_immunity = true;
+                        }
+                    }
+                }
+                // Player identification and rest events are handled at the top of the function
                 ParsedLine::PlayerJoin { .. } |
                 ParsedLine::PlayerChat { .. } |
                 ParsedLine::PartyChat { .. } |
-                ParsedLine::PartyJoin { .. } => {
+                ParsedLine::PartyJoin { .. } |
+                ParsedLine::Resting { .. } |
+                ParsedLine::BuffExpired { .. } => {
                     // These are already handled at the start of the function
                 }
             }

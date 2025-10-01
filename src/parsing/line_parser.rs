@@ -7,6 +7,8 @@ pub enum ParsedLine {
     Attack { attacker: String, target: String, result: String, concealment: bool, timestamp: u64 },
     Damage { attacker: String, target: String, total: u32, breakdown: HashMap<String, u32>, timestamp: u64 },
     Absorb { target: String, amount: u32, dtype: String, timestamp: u64 },
+    AbsorbResistance { target: String, amount: u32, timestamp: u64 },
+    AbsorbReduction { target: String, amount: u32, timestamp: u64 },
     SpellResist { target: String, spell: String, result: String, timestamp: u64 },
     Save { target: String, save_type: String, element: String, result: String, timestamp: u64 },
     Casting { caster: String, spell: String, timestamp: u64 },
@@ -15,6 +17,8 @@ pub enum ParsedLine {
     PlayerChat { account_name: String, character_name: String, chat_type: String, timestamp: u64 },
     PartyChat { character_name: String, timestamp: u64 },
     PartyJoin { character_name: String, timestamp: u64 },
+    Resting { timestamp: u64 },
+    BuffExpired { spell_name: String, timestamp: u64 },
 }
 
 pub fn is_long_duration_spell(spell: &str) -> bool {
@@ -44,6 +48,19 @@ pub fn parse_log_line(line: &str) -> Option<ParsedLine> {
     };
 
     let clean_line = line.trim().strip_prefix("[CHAT WINDOW TEXT]").and_then(|s| s.splitn(2, ']').nth(1)).unwrap_or(line).trim();
+
+    // Check for rest detection first (high priority for buff clearing)
+    if RE_RESTING.is_match(clean_line) {
+        return Some(ParsedLine::Resting { timestamp });
+    }
+
+    // Check for buff expiration
+    if let Some(caps) = RE_BUFF_EXPIRED.captures(clean_line) {
+        return Some(ParsedLine::BuffExpired {
+            spell_name: caps["spell_name"].trim().to_string(),
+            timestamp,
+        });
+    }
 
     // Check for player identification patterns first (these have higher priority)
     if let Some(caps) = RE_PLAYER_JOIN.captures(clean_line) {
@@ -155,6 +172,22 @@ pub fn parse_log_line(line: &str) -> Option<ParsedLine> {
             target: caps["target"].trim().to_string(),
             amount: caps["amount"].parse().unwrap_or(0),
             dtype: caps["type"].to_string(),
+            timestamp,
+        });
+    }
+
+    if let Some(caps) = RE_ABSORB_RESISTANCE.captures(clean_line) {
+        return Some(ParsedLine::AbsorbResistance {
+            target: caps["target"].trim().to_string(),
+            amount: caps["amount"].parse().unwrap_or(0),
+            timestamp,
+        });
+    }
+
+    if let Some(caps) = RE_ABSORB_REDUCTION.captures(clean_line) {
+        return Some(ParsedLine::AbsorbReduction {
+            target: caps["target"].trim().to_string(),
+            amount: caps["amount"].parse().unwrap_or(0),
             timestamp,
         });
     }

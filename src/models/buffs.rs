@@ -61,6 +61,30 @@ impl BuffTracker {
         self.active_buffs.clear();
     }
 
+    pub fn remove_buff(&mut self, spell_name: &str) -> bool {
+        // First try exact match
+        if self.active_buffs.remove(spell_name).is_some() {
+            return true;
+        }
+
+        // Then try case-insensitive match and various spell name variations
+        let spell_lower = spell_name.to_lowercase();
+        let mut buff_to_remove = None;
+
+        for (buff_name, _) in &self.active_buffs {
+            if buff_name.to_lowercase() == spell_lower {
+                buff_to_remove = Some(buff_name.clone());
+                break;
+            }
+        }
+
+        if let Some(buff_name) = buff_to_remove {
+            self.active_buffs.remove(&buff_name).is_some()
+        } else {
+            false
+        }
+    }
+
     pub fn get_active_buffs(&self) -> Vec<&ActiveBuff> {
         self.active_buffs
             .values()
@@ -106,14 +130,14 @@ impl BuffTracker {
                 Some((2 + caster_level / 2 * 6) * 2)
             },
             "Acid Fog" => {
-                // Acid Fog: 1 round per caster level / 2, with minimum caster level of 1
+                // Acid Fog: 1 round per caster level, with minimum caster level of 1
                 let caster_level = settings.caster_level.max(1) as u64;
-                Some(caster_level * 6 / 2)
+                Some(caster_level * 6)
             },
             "Cloudkill" => {
-                // Cloudkill: 1 round per caster level / 2, with minimum caster level of 1
+                // Cloudkill: 1 round per caster level, with minimum caster level of 1
                 let caster_level = settings.caster_level.max(1) as u64;
-                Some(caster_level * 6 / 2)
+                Some(caster_level * 6)
             },
             "Mestil's Acid Sheath" => {
                 // Mestil's Acid Sheath: 1 round per caster level * 2, with minimum caster level of 1

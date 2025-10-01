@@ -1,0 +1,9 @@
+[CHAT WINDOW TEXT] [Tue Sep 30 21:39:57] Sneak Attack : zzTEST WM R Dagger attacks 65 AC DUMMY - DPS TEST - Chaotic Evil - Boss Damage Reduction : *hit* : (15 + 57 = 72)
+[CHAT WINDOW TEXT] [Tue Sep 30 21:39:57] 65 AC DUMMY - DPS TEST - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 3 point(s) of Fire
+[CHAT WINDOW TEXT] [Tue Sep 30 21:39:57] Total Damage: 201
+[CHAT WINDOW TEXT] [Tue Sep 30 21:39:57] zzTEST WM R Dagger damages 65 AC DUMMY - DPS TEST - Chaotic Evil - Boss Damage Reduction: 9 (9 Fire)
+[CHAT WINDOW TEXT] [Tue Sep 30 21:39:57] Total Damage: 255
+[CHAT WINDOW TEXT] [Tue Sep 30 21:39:57] zzTEST WM R Dagger damages 65 AC DUMMY - DPS TEST - Chaotic Evil - Boss Damage Reduction: 54 (43 Physical 3 Acid 1 Divine 7 Pure)
+[CHAT WINDOW TEXT] [Tue Sep 30 21:39:57] 65 AC DUMMY - DPS TEST - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 14 point(s) of Physical
+[CHAT WINDOW TEXT] [Tue Sep 30 21:39:57] 65 AC DUMMY - DPS TEST - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 1 point(s) of Acid
+[CHAT WINDOW TEXT] [Tue Sep 30 21:39:57] 65 AC DUMMY - DPS TEST - Chaotic Evil - Boss Damage Reduction : Damage Immunity absorbs 1 point(s) of Divine
