@@ -44,7 +44,7 @@ A real-time combat tracker for Neverwinter Nights that monitors log files and pr
 
 ### Building from Source
 ```bash
-git clone <repository-url>
+git clone https://github.com/crabsnz/nwn_parser
 cd nwn_parser
 cargo build --release
 ```
