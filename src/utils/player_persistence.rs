@@ -22,6 +22,10 @@ pub fn load_player_registry() -> PlayerRegistry {
             match serde_json::from_str::<PlayerRegistry>(&content) {
                 Ok(mut registry) => {
                     println!("Loaded player registry with {} players", registry.players.len());
+                    // Reset main player - it will be determined dynamically each session
+                    registry.main_player_account = None;
+                    // Rebuild character_to_account map from players data
+                    registry.rebuild_character_to_account();
                     registry.cleanup_temporary_accounts();
                     // Save the cleaned up registry
                     let _ = save_player_registry(&registry);

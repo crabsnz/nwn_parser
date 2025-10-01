@@ -260,13 +260,35 @@ impl eframe::App for NwnLogApp {
                 } else {
                     "Encounters".to_string()
                 };
-                if ui.add_sized([100.0, 20.0], egui::Button::new(encounters_button_text).selected(showing_encounters || self.view_mode == ViewMode::MultipleSelected)).clicked() {
-                    if self.view_mode == ViewMode::MultipleSelected {
-                        // If already in multi-select mode, close the selection UI but keep showing the data
-                        self.view_mode = ViewMode::CurrentFight; // This will be overridden by get_current_stats if encounters are selected
-                    } else {
-                        // Switch to multi-select mode to show the selection UI
-                        self.view_mode = ViewMode::MultipleSelected;
+                let encounters_button = ui.add_sized([100.0, 20.0], egui::Button::new(encounters_button_text).selected(showing_encounters || self.encounters_popup_open));
+                self.encounters_button_rect = Some(encounters_button.rect);
+                if encounters_button.clicked() {
+                    let was_closed = !self.encounters_popup_open;
+                    self.encounters_popup_open = !self.encounters_popup_open;
+
+                    // Auto-select encounters when opening popup based on view mode
+                    if was_closed && self.encounters_popup_open {
+                        match self.view_mode {
+                            ViewMode::CurrentFight => {
+                                // Select the current encounter
+                                if let Ok(current_id) = self.current_encounter_id.lock() {
+                                    if let Some(id) = *current_id {
+                                        self.selected_encounter_ids.clear();
+                                        self.selected_encounter_ids.insert(id);
+                                    }
+                                }
+                            }
+                            ViewMode::OverallStats => {
+                                // Select all encounters
+                                if let Ok(encounters) = self.encounters.lock() {
+                                    self.selected_encounter_ids.clear();
+                                    for encounter_id in encounters.keys() {
+                                        self.selected_encounter_ids.insert(*encounter_id);
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
                     }
                 }
 
@@ -316,66 +338,6 @@ impl eframe::App for NwnLogApp {
             });
             }
 
-            // Show encounter selection UI if in multi-select mode
-            if self.view_mode == ViewMode::MultipleSelected {
-                ui.separator();
-                ui.label("Select encounters to combine:");
-                
-                egui::ScrollArea::vertical()
-                    .id_salt("encounter_selection_scroll")
-                    .max_height(150.0)
-                    .show(ui, |ui| {
-                        if let Ok(encounters) = self.encounters.try_lock() {
-                            let mut sorted_encounters: Vec<_> = encounters.values().collect();
-                            sorted_encounters.sort_by(|a, b| b.end_time.cmp(&a.end_time));
-                            
-                            for encounter in sorted_encounters {
-                                let mut is_selected = self.selected_encounter_ids.contains(&encounter.id);
-                                let display_name = encounter.get_display_name();
-                                
-                                // Make the entire row clickable by using a horizontal layout
-                                ui.horizontal(|ui| {
-                                    if ui.checkbox(&mut is_selected, "").changed() {
-                                        if is_selected {
-                                            self.selected_encounter_ids.insert(encounter.id);
-                                        } else {
-                                            self.selected_encounter_ids.remove(&encounter.id);
-                                        }
-                                    }
-                                    
-                                    // Make the text also clickable
-                                    let text_response = ui.selectable_label(is_selected, display_name);
-                                    if text_response.clicked() {
-                                        if is_selected {
-                                            self.selected_encounter_ids.remove(&encounter.id);
-                                        } else {
-                                            self.selected_encounter_ids.insert(encounter.id);
-                                        }
-                                    }
-                                });
-                            }
-                        }
-                    });
-                
-                // Show selection summary
-                if !self.selected_encounter_ids.is_empty() {
-                    ui.horizontal(|ui| {
-                        ui.label(format!("Selected {} encounter(s)", self.selected_encounter_ids.len()));
-                        
-                        if ui.button("Clear All").clicked() {
-                            self.selected_encounter_ids.clear();
-                        }
-                        if ui.button("Select All").clicked() {
-                            if let Ok(encounters) = self.encounters.try_lock() {
-                                for encounter_id in encounters.keys() {
-                                    self.selected_encounter_ids.insert(*encounter_id);
-                                }
-                            }
-                        }
-                    });
-                }
-            }
-            
             ui.separator();
             
             // Get the stats data using the new system
@@ -470,6 +432,96 @@ impl eframe::App for NwnLogApp {
                 crate::gui::show_logs_window(ctx, &mut self.logs_window_state,
                     settings_ref.clone(),
                     &mut self.logs_window_open);
+            }
+        }
+
+        // Show encounters popup if open
+        if self.encounters_popup_open {
+            if let Some(button_rect) = self.encounters_button_rect {
+                let popup_pos = button_rect.left_bottom() + egui::vec2(0.0, 5.0);
+
+                // Calculate responsive dimensions
+                let screen_rect = ctx.screen_rect();
+                let available_height = screen_rect.height() - popup_pos.y - 20.0; // 20px bottom padding
+                let popup_width = 500.0_f32.min(screen_rect.width() * 0.6); // 60% of screen width, max 500
+                let popup_max_height = (available_height * 0.85).max(200.0); // 85% of available space, min 200px
+
+                egui::Area::new(egui::Id::new("encounters_popup_area"))
+                    .fixed_pos(popup_pos)
+                    .order(egui::Order::Foreground)
+                    .show(ctx, |ui| {
+                        egui::Frame::popup(ui.style()).show(ui, |ui| {
+                            ui.set_min_width(popup_width);
+                            ui.label("Select encounters to combine:");
+                            ui.separator();
+
+                            // Scrollable encounter list
+                            egui::ScrollArea::vertical()
+                                .max_height(popup_max_height)
+                                .show(ui, |ui| {
+                                    if let Ok(encounters) = self.encounters.try_lock() {
+                                        let mut sorted_encounters: Vec<_> = encounters.values().collect();
+                                        sorted_encounters.sort_by(|a, b| b.end_time.cmp(&a.end_time));
+
+                                        for encounter in sorted_encounters {
+                                            let mut is_selected = self.selected_encounter_ids.contains(&encounter.id);
+                                            let display_name = encounter.get_display_name();
+
+                                            ui.horizontal(|ui| {
+                                                if ui.checkbox(&mut is_selected, "").changed() {
+                                                    if is_selected {
+                                                        self.selected_encounter_ids.insert(encounter.id);
+                                                    } else {
+                                                        self.selected_encounter_ids.remove(&encounter.id);
+                                                    }
+                                                }
+
+                                                let text_response = ui.selectable_label(is_selected, display_name);
+                                                if text_response.clicked() {
+                                                    if is_selected {
+                                                        self.selected_encounter_ids.remove(&encounter.id);
+                                                    } else {
+                                                        self.selected_encounter_ids.insert(encounter.id);
+                                                    }
+                                                }
+                                            });
+                                        }
+                                    }
+                                });
+
+                            // Selection summary and buttons
+                            ui.separator();
+                            if !self.selected_encounter_ids.is_empty() {
+                                ui.horizontal(|ui| {
+                                    ui.label(format!("Selected: {}", self.selected_encounter_ids.len()));
+
+                                    if ui.button("Clear All").clicked() {
+                                        self.selected_encounter_ids.clear();
+                                    }
+                                    if ui.button("Select All").clicked() {
+                                        if let Ok(encounters) = self.encounters.try_lock() {
+                                            for encounter_id in encounters.keys() {
+                                                self.selected_encounter_ids.insert(*encounter_id);
+                                            }
+                                        }
+                                    }
+                                });
+                            }
+                        });
+                    });
+
+                // Close if clicked outside the popup
+                if ctx.input(|i| i.pointer.any_click()) {
+                    let pointer_pos = ctx.input(|i| i.pointer.interact_pos());
+                    if let Some(pos) = pointer_pos {
+                        // Calculate popup rect using the same dimensions (with some padding for UI elements)
+                        let popup_height = popup_max_height + 80.0; // Extra space for label, separator, and buttons
+                        let popup_rect = egui::Rect::from_min_size(popup_pos, egui::vec2(popup_width, popup_height));
+                        if !button_rect.contains(pos) && !popup_rect.contains(pos) {
+                            self.encounters_popup_open = false;
+                        }
+                    }
+                }
             }
         }
 

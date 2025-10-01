@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
+use eframe::egui;
 use crate::models::{Encounter, CombatantStats, ViewMode, PlayerRegistry, AppSettings, BuffTracker, DamageViewMode, CombatantFilter};
 use crate::gui::helpers::compute_stats_hash;
 use crate::gui::logs_window::LogsWindowState;
@@ -54,6 +55,10 @@ pub struct NwnLogApp {
     pub logs_window_state: LogsWindowState,
     /// Whether the logs window is open
     pub logs_window_open: bool,
+    /// Whether the encounters popup is open
+    pub encounters_popup_open: bool,
+    /// Rect of the encounters button for popup positioning
+    pub encounters_button_rect: Option<egui::Rect>,
 }
 
 impl NwnLogApp {
@@ -88,6 +93,8 @@ impl NwnLogApp {
             log_reload_requested: Arc::new(Mutex::new(false)),
             logs_window_state: LogsWindowState::default(),
             logs_window_open: false,
+            encounters_popup_open: false,
+            encounters_button_rect: None,
         }
     }
 

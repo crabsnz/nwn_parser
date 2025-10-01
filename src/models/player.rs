@@ -10,8 +10,10 @@ pub struct PlayerData {
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct PlayerRegistry {
     pub players: HashMap<String, PlayerData>, // account_name -> PlayerData
-    pub character_to_account: HashMap<String, String>, // character_name -> account_name
-    pub main_player_account: Option<String>, // The main player (first "has joined as a player")
+    #[serde(skip)]
+    pub character_to_account: HashMap<String, String>, // character_name -> account_name - rebuilt from players
+    #[serde(skip)]
+    pub main_player_account: Option<String>, // The main player (first "has joined as a player") - not persisted
 }
 
 impl PlayerRegistry {
@@ -125,6 +127,16 @@ impl PlayerRegistry {
                     println!("Cleaned up temporary account '{}' - character '{}' is now under account '{}'",
                              temp_account, character_name, real_account);
                 }
+            }
+        }
+    }
+
+    /// Rebuild the character_to_account map from the players data
+    pub fn rebuild_character_to_account(&mut self) {
+        self.character_to_account.clear();
+        for (account_name, player_data) in &self.players {
+            for character_name in &player_data.character_names {
+                self.character_to_account.insert(character_name.clone(), account_name.clone());
             }
         }
     }
